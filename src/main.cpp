@@ -7,7 +7,7 @@
 // 재연결 루프
 void reconnectLoop(
     StompInterface &stomp,
-    std::atomic<bool> &stopRequested, // 종료 신호 플래그
+    std::atomic<bool> &stopRequested, // 멀티 스레드 안전 종료 신호 플래그
     int reconnectDelaySec = 3)        // 재연결 대기 시간
 {
     // 구독 등록
@@ -29,6 +29,7 @@ void reconnectLoop(
         int waited = 0;
         while (!stomp.isConnected() && !stopRequested && waited < 50)
         {
+            // start()가 논블로킹이라 wsThread가 연결 완료할 때까지 100ms마다 체크하며 대기 (최대 5초)
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             waited++;
         }
@@ -37,7 +38,7 @@ void reconnectLoop(
         {
             doSubscribe(); // 구독 등록
 
-            // 끊길 때까지 대기
+            // 끊길 때까지 대기(1초마다 확인하면서 기다림)
             while (stomp.isConnected() && !stopRequested)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
@@ -48,6 +49,7 @@ void reconnectLoop(
         // 재연결 카운트다운
         for (int i = reconnectDelaySec; i > 0; i--)
         {
+            // quit 입력
             if (stopRequested)
                 return;
             std::cout << "[reconnecting...] " << i << "s" << std::endl;
@@ -114,6 +116,9 @@ int main()
                                 { reconnectLoop(stomp, stopRequested); });
 
     // 메인 스레드에서 사용자 입력 처리
+    // 사용자의 입력을 기다려야 해서 블로킹
+    // 블로킹 : 작업이 완료될 때까지 기다림.
+    // stopRequested : 프로그램 종료 신호 플래그
     inputLoop(stomp, stopRequested);
 
     // reconnectThread 종료될 때까지 대기 후 프로그램 종료
