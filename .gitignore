@@ -1,0 +1,43 @@
+# Build
+build/
+cmake-build-debug/
+cmake-build-release/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Visual Studio
+.vs/
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.sln
+*.suo
+*.user
+
+# VSCode
+.vscode/
+
+# Claude
+.claude/
+
+# 외부 라이브러리
+websocketpp/
+
+# 실행 파일
+*.exe
+*.out
+*.app
+*.dll
+*.so
+*.dylib
+
+# 오브젝트 파일
+*.o
+*.obj
+
+# 로그
+*.log
