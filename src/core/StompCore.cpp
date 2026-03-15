@@ -1,5 +1,10 @@
 #include "StompCore.hpp"
 
+// WebSocket 연결 해제
+// STOMP 프레임 조립
+// 이벤트 감지
+// 핵심 통신 로직 담당
+
 // 생성자
 StompCore::StompCore(const std::string &url, Handlers handlers)
     : uri(url),

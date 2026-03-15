@@ -1,5 +1,9 @@
 #include "StompInterface.hpp"
 
+// connected 상태 관리
+// pub전 연결 체크
+// 메시지 라우팅
+
 // Core와 Interface 연결
 StompInterface::StompInterface(const std::string &url, Handlers handlers)
     : handlers(std::move(handlers)),
