@@ -6,13 +6,13 @@ StompInterface::StompInterface(const std::string &url, Handlers handlers)
       core(url,
            {[this]()
             {
-                connected = true; // 연결 시 상태 변경
+                // 연결 시 콜백 호출
                 if (this->handlers.onConnect)
                     this->handlers.onConnect();
             },
             [this]()
             {
-                connected = false; // 해제 시 상태 변경
+                // 해제 시 콜백 호출
                 if (this->handlers.onDisconnect)
                     this->handlers.onDisconnect();
             },
@@ -41,20 +41,19 @@ void StompInterface::stop()
 {
     if (stopRequested.exchange(true))
         return;
-    connected = false;
     core.stop();
 }
 
-// 연결 상태 확인
+// Core에 연결 상태 확인 위임
 bool StompInterface::isConnected() const
 {
-    return connected.load();
+    return core.isConnected();
 }
 
 // 연결 확인 후 Core에 전송 명령
 void StompInterface::pub(const std::string &destination, const std::string &body)
 {
-    if (!connected)
+    if (!core.isConnected())
         return;
     core.pub(destination, body);
 }

@@ -54,6 +54,13 @@ void StompCore::stop()
         wsThread.detach();
 }
 
+// 연결 상태 확인
+bool StompCore::isConnected() const
+{
+    std::lock_guard<std::mutex> lock(clientMutex);
+    return currentClient != nullptr;
+}
+
 // 실제 WebSocket 연결 및 이벤트 루프 실행
 void StompCore::tryConnect()
 {

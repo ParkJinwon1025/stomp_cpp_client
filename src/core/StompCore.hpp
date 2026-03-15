@@ -41,6 +41,9 @@ public:
     // STOMP SUBSCRIBE 프레임 조립 및 전송
     void sub(const std::string &topic, const std::string &subId);
 
+    // 연결 상태 확인
+    bool isConnected() const;
+
 private:
     std::string uri;
     std::string host;
@@ -48,7 +51,7 @@ private:
 
     ws_client *currentClient{nullptr};
     websocketpp::connection_hdl hdl;
-    std::mutex clientMutex;
+    mutable std::mutex clientMutex; // isConnected()에서 const이므로 mutable
     std::atomic<bool> stopRequested{false};
     std::thread wsThread;
 

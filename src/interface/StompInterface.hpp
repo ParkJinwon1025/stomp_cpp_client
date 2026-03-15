@@ -25,7 +25,7 @@ public:
     // Core에 종료 명령
     void stop();
 
-    // 연결 상태 확인
+    // Core에 연결 상태 확인 위임
     bool isConnected() const;
 
     // 연결 확인 후 Core에 전송 명령
@@ -38,7 +38,6 @@ private:
     Handlers handlers;
     StompCore core;
 
-    std::atomic<bool> connected{false};
     std::atomic<bool> stopRequested{false};
 
     struct Subscription
