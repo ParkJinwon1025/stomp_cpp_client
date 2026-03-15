@@ -1,13 +1,7 @@
 #include "StompCore.hpp"
-#include <iostream>
-#include <chrono>
-#include <ctime>
-#include <iomanip>
 
 // 생성자
-StompCore::StompCore(
-    const std::string &url,
-    Handlers handlers)
+StompCore::StompCore(const std::string &url, Handlers handlers)
     : uri(url),
       host(parseHost(url)),
       handlers(std::move(handlers))
@@ -20,7 +14,7 @@ StompCore::~StompCore()
     stop();
 }
 
-// URL에서 호스트명 호출
+// URL에서 호스트명 추출
 std::string StompCore::parseHost(const std::string &url) const
 {
     auto start = url.find("://");
@@ -31,7 +25,7 @@ std::string StompCore::parseHost(const std::string &url) const
     return url.substr(start, end - start);
 }
 
-// 웹 소켓 연결 시작
+// 웹소켓 연결 시작
 void StompCore::start()
 {
     if (stopRequested)
@@ -44,7 +38,7 @@ void StompCore::start()
                            { tryConnect(); });
 }
 
-// 웹 소켓 연결 종료 및 스레드 정리
+// 웹소켓 연결 종료 및 스레드 정리
 void StompCore::stop()
 {
     if (stopRequested.exchange(true))
@@ -75,14 +69,16 @@ void StompCore::tryConnect()
             hdl = h;
             currentClient = &c;
         }
-
-        sendConnectFrame(c);
+        sendConnectFrame(); // STOMP 핸드셰이크
 
         if (handlers.onConnect)
             handlers.onConnect(); });
 
     c.set_message_handler([this](websocketpp::connection_hdl, ws_client::message_ptr msg)
-                          { parseMessage(msg->get_payload()); });
+                          {
+        // 파싱 없이 raw payload 그대로 Interface로 전달
+        if (handlers.onRawMessage)
+            handlers.onRawMessage(msg->get_payload()); });
 
     c.set_close_handler([this](websocketpp::connection_hdl)
                         {
@@ -120,86 +116,21 @@ void StompCore::tryConnect()
     }
 }
 
-// Stomp SEND 프레임 조립 후 전송
-void StompCore::pub(const std::string &destination, const std::string &body)
+// raw 프레임 전송
+void StompCore::sendRaw(const std::string &frame)
 {
     std::lock_guard<std::mutex> lock(clientMutex);
     if (!currentClient)
         return;
 
-    std::string frame =
-        "SEND\n"
-        "destination:" +
-        destination + "\n"
-                      "content-type:application/json\n\n" +
-        body;
-    frame.push_back('\0');
-
     websocketpp::lib::error_code ec;
     currentClient->send(hdl, frame, websocketpp::frame::opcode::text, ec);
 }
 
-// Stomp Subscribe 프레임 조립 후 전송 / 서버에 구독 등록 요청
-void StompCore::sub(const std::string &topic, const std::string &subId)
-{
-    std::lock_guard<std::mutex> lock(clientMutex);
-    if (!currentClient)
-        return;
-
-    std::string frame =
-        "SUBSCRIBE\n"
-        "id:" +
-        subId + "\n"
-                "destination:" +
-        topic + "\n\n";
-    frame.push_back('\0');
-
-    websocketpp::lib::error_code ec;
-    currentClient->send(hdl, frame, websocketpp::frame::opcode::text, ec);
-}
-
-// Stomp 핸드셰이크 프레임 전송
-void StompCore::sendConnectFrame(ws_client &c)
+// STOMP 핸드셰이크 프레임 전송
+void StompCore::sendConnectFrame()
 {
     std::string frame = "CONNECT\naccept-version:1.2\nhost:" + host + "\n\n";
     frame.push_back('\0');
-    c.send(hdl, frame, websocketpp::frame::opcode::text);
-}
-
-// 서버에 온 raw 텍스트를 Stomp 프레임으로 해석 후 Interface로 전달
-void StompCore::parseMessage(const std::string &payload)
-{
-    auto firstNewline = payload.find('\n');
-    if (firstNewline == std::string::npos)
-        return;
-
-    std::string frameType = payload.substr(0, firstNewline);
-
-    if (frameType == "CONNECTED")
-    {
-        // STOMP 핸드셰이크 완료 → onConnect는 이미 open_handler에서 호출됨
-        return;
-    }
-
-    if (frameType != "MESSAGE")
-        return;
-
-    std::string destination;
-    auto destPos = payload.find("destination:");
-    if (destPos != std::string::npos)
-    {
-        auto destEnd = payload.find('\n', destPos);
-        destination = payload.substr(destPos + 12, destEnd - destPos - 12);
-    }
-
-    auto bodyPos = payload.find("\n\n");
-    if (bodyPos == std::string::npos)
-        return;
-
-    std::string body = payload.substr(bodyPos + 2);
-    if (!body.empty() && body.back() == '\0')
-        body.pop_back();
-
-    if (handlers.onMessage)
-        handlers.onMessage(destination, body);
+    sendRaw(frame);
 }
