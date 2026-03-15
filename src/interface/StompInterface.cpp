@@ -1,5 +1,6 @@
 #include "StompInterface.hpp"
 
+// Core와 Interface 연결
 StompInterface::StompInterface(
     const std::string &url,
     Handlers handlers)
@@ -24,17 +25,20 @@ StompInterface::StompInterface(
 {
 }
 
+// 자동 정리
 StompInterface::~StompInterface()
 {
     stop();
 }
 
+// 시작 명령
 void StompInterface::start()
 {
     stopRequested = false;
     core.start();
 }
 
+// 종료 명령
 void StompInterface::stop()
 {
     if (stopRequested.exchange(true))
@@ -43,11 +47,13 @@ void StompInterface::stop()
     core.stop();
 }
 
+// 연결 상태 확인
 bool StompInterface::isConnected() const
 {
     return connected.load();
 }
 
+// 연결 확인 후 core 전송 명령
 void StompInterface::pub(const std::string &destination, const std::string &body)
 {
     if (!connected)
@@ -55,6 +61,7 @@ void StompInterface::pub(const std::string &destination, const std::string &body
     core.pub(destination, body);
 }
 
+// 구독 목록 저장 후 Core에 구독 명령
 void StompInterface::sub(const std::string &topic, std::function<void(const std::string &, const std::string &)> callback)
 {
     {
@@ -64,6 +71,7 @@ void StompInterface::sub(const std::string &topic, std::function<void(const std:
     core.sub(topic, "sub-" + std::to_string(subscriptions.size() - 1));
 }
 
+// 수신 메시지를 등록된 구독 목록에서 찾아서 해당 콜백 실행
 void StompInterface::onMessageHandler(const std::string &destination, const std::string &body)
 {
     std::lock_guard<std::mutex> lock(subMutex);

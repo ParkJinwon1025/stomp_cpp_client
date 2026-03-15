@@ -4,6 +4,7 @@
 #include <ctime>
 #include <iomanip>
 
+// 생성자
 StompCore::StompCore(
     const std::string &url,
     Handlers handlers)
@@ -13,11 +14,13 @@ StompCore::StompCore(
 {
 }
 
+// 소멸자
 StompCore::~StompCore()
 {
     stop();
 }
 
+// URL에서 호스트명 호출
 std::string StompCore::parseHost(const std::string &url) const
 {
     auto start = url.find("://");
@@ -28,6 +31,7 @@ std::string StompCore::parseHost(const std::string &url) const
     return url.substr(start, end - start);
 }
 
+// 웹 소켓 연결 시작
 void StompCore::start()
 {
     if (stopRequested)
@@ -40,6 +44,7 @@ void StompCore::start()
                            { tryConnect(); });
 }
 
+// 웹 소켓 연결 종료 및 스레드 정리
 void StompCore::stop()
 {
     if (stopRequested.exchange(true))
@@ -55,6 +60,7 @@ void StompCore::stop()
         wsThread.detach();
 }
 
+// 실제 WebSocket 연결 및 이벤트 루프 실행
 void StompCore::tryConnect()
 {
     ws_client c;
@@ -114,6 +120,7 @@ void StompCore::tryConnect()
     }
 }
 
+// Stomp SEND 프레임 조립 후 전송
 void StompCore::pub(const std::string &destination, const std::string &body)
 {
     std::lock_guard<std::mutex> lock(clientMutex);
@@ -132,6 +139,7 @@ void StompCore::pub(const std::string &destination, const std::string &body)
     currentClient->send(hdl, frame, websocketpp::frame::opcode::text, ec);
 }
 
+// Stomp Subscribe 프레임 조립 후 전송 / 서버에 구독 등록 요청
 void StompCore::sub(const std::string &topic, const std::string &subId)
 {
     std::lock_guard<std::mutex> lock(clientMutex);
@@ -150,6 +158,7 @@ void StompCore::sub(const std::string &topic, const std::string &subId)
     currentClient->send(hdl, frame, websocketpp::frame::opcode::text, ec);
 }
 
+// Stomp 핸드셰이크 프레임 전송
 void StompCore::sendConnectFrame(ws_client &c)
 {
     std::string frame = "CONNECT\naccept-version:1.2\nhost:" + host + "\n\n";
@@ -157,6 +166,7 @@ void StompCore::sendConnectFrame(ws_client &c)
     c.send(hdl, frame, websocketpp::frame::opcode::text);
 }
 
+// 서버에 온 raw 텍스트를 Stomp 프레임으로 해석 후 Interface로 전달
 void StompCore::parseMessage(const std::string &payload)
 {
     auto firstNewline = payload.find('\n');
