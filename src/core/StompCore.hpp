@@ -20,7 +20,7 @@ public:
     {
         std::function<void()> onConnect;
         std::function<void()> onDisconnect;
-        std::function<void(const std::string &)> onRawMessage; // raw payload 그대로 전달
+        std::function<void(const std::string &, const std::string &)> onMessage;
     };
 
     StompCore(const std::string &url, Handlers handlers);
@@ -29,14 +29,17 @@ public:
     StompCore(const StompCore &) = delete;
     StompCore &operator=(const StompCore &) = delete;
 
-    // 웹소켓 연결 시작
+    // WebSocket 연결 시작
     void start();
 
-    // 웹소켓 연결 종료
+    // WebSocket 연결 종료
     void stop();
 
-    // raw 프레임 전송
-    void sendRaw(const std::string &frame);
+    // STOMP SEND 프레임 조립 및 전송
+    void pub(const std::string &destination, const std::string &body);
+
+    // STOMP SUBSCRIBE 프레임 조립 및 전송
+    void sub(const std::string &topic, const std::string &subId);
 
 private:
     std::string uri;
@@ -53,7 +56,10 @@ private:
     void tryConnect();
 
     // STOMP 핸드셰이크 프레임 전송
-    void sendConnectFrame();
+    void sendConnectFrame(ws_client &c);
+
+    // raw payload를 STOMP 프레임으로 파싱 후 콜백 호출
+    void parseMessage(const std::string &payload);
 
     // URL에서 호스트명 추출
     std::string parseHost(const std::string &url) const;

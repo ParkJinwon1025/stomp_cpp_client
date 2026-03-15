@@ -4,23 +4,23 @@
 #include <atomic>
 #include <chrono>
 
-// 구독 등록
-void doSubscribe(StompInterface &stomp)
-{
-    stomp.sub("/topic/robot", [&](const std::string &destination, const std::string &body)
-              {
-                  std::cout << "[received] destination: " << destination << std::endl;    // 수신 destination 출력
-                  std::cout << "[received] body: " << body << std::endl;                  // 수신 body 출력
-                  stomp.pub("/app/ubisam", "{\"type\":\"response\",\"message\":\"ok\"}"); // 응답 전송
-              });
-}
-
 // 재연결 루프
 void reconnectLoop(
     StompInterface &stomp,
     std::atomic<bool> &stopRequested, // 종료 신호 플래그
     int reconnectDelaySec = 3)        // 재연결 대기 시간
 {
+    // 구독 등록
+    auto doSubscribe = [&]()
+    {
+        stomp.sub("/topic/robot", [&](const std::string &destination, const std::string &body)
+                  {
+                      std::cout << "[received] destination: " << destination << std::endl;    // 수신 destination 출력
+                      std::cout << "[received] body: " << body << std::endl;                  // 수신 body 출력
+                      stomp.pub("/app/ubisam", "{\"type\":\"response\",\"message\":\"ok\"}"); // 응답 전송
+                  });
+    };
+
     while (!stopRequested) // 종료 신호 올 때까지 반복
     {
         stomp.start(); // 연결 시도
@@ -35,7 +35,7 @@ void reconnectLoop(
 
         if (stomp.isConnected()) // 연결 성공 시
         {
-            doSubscribe(stomp); // 구독 등록
+            doSubscribe(); // 구독 등록
 
             // 끊길 때까지 대기
             while (stomp.isConnected() && !stopRequested)
