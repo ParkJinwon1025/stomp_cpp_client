@@ -3,6 +3,8 @@
 // connected 상태 관리
 // pub전 연결 체크
 // 메시지 라우팅
+// interface와 start의 구조가 비슷해지는 게 파라미터 없이 그대로 넘겨주기 때문임. (Core 코드를 그대로 실행)
+// 지금 코드도 나쁘지는 않음. ( 적당히 수정해보고 내 선에서 마무리 )
 
 // Core와 Interface 연결
 StompInterface::StompInterface(const std::string &url, Handlers handlers)
@@ -34,6 +36,8 @@ StompInterface::~StompInterface()
 }
 
 // Core에 시작 명령
+// url을 start할 떄 넘겨준다.
+// Core가 TCP 일 떄도 동일하게 동작할 수 있느냐?
 void StompInterface::start()
 {
     // stopRequested 초기화
@@ -60,6 +64,7 @@ bool StompInterface::isConnected() const
 }
 
 // 연결 확인 후 Core에 전송 명령
+// 파라미터를 받아 pub를 하니 얘는 의미가 있음.
 void StompInterface::pub(const std::string &destination, const std::string &body)
 {
     if (!core.isConnected())
@@ -72,6 +77,7 @@ void StompInterface::pub(const std::string &destination, const std::string &body
 // 2. subscriptions에 callback 추가
 // 3. sub 호출
 // 4. 서버에 Subscribe 프레임 전송
+// 파라미터를 받아 sub를 하니 얘는 의미가 있음.
 void StompInterface::sub(const std::string &topic, std::function<void(const std::string &, const std::string &)> callback)
 {
     {
