@@ -5,6 +5,8 @@
 // 이벤트 감지
 // 핵심 통신 로직 담당
 
+// 코어에 핵심 로직 빼고 여러 함수들 몇개 들어가 있어도 괜찮음.
+
 // 생성자
 StompCore::StompCore(Handlers handlers)
     : handlers(std::move(handlers))
