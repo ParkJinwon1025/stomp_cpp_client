@@ -4,28 +4,28 @@
 // pub전 연결 체크
 // 메시지 라우팅
 // interface와 start의 구조가 비슷해지는 게 파라미터 없이 그대로 넘겨주기 때문임. (Core 코드를 그대로 실행)
-// 지금 코드도 나쁘지는 않음. ( 적당히 수정해보고 내 선에서 마무리 )
+// 지금 코드도 나쁘지는 않음.
 
 // Core와 Interface 연결
-StompInterface::StompInterface(const std::string &url, Handlers handlers)
+StompInterface::StompInterface(Handlers handlers)
     : handlers(std::move(handlers)),
-      core(url,
-           {[this]()
-            {
-                // 연결 시 콜백 호출
-                if (this->handlers.onConnect)
-                    this->handlers.onConnect();
-            },
-            [this]()
-            {
-                // 해제 시 콜백 호출
-                if (this->handlers.onDisconnect)
-                    this->handlers.onDisconnect();
-            },
-            [this](const std::string &destination, const std::string &body)
-            {
-                onMessageHandler(destination, body); // 메시지 라우팅
-            }})
+      core(
+          {[this]()
+           {
+               // 연결 시 콜백 호출
+               if (this->handlers.onConnect)
+                   this->handlers.onConnect();
+           },
+           [this]()
+           {
+               // 해제 시 콜백 호출
+               if (this->handlers.onDisconnect)
+                   this->handlers.onDisconnect();
+           },
+           [this](const std::string &destination, const std::string &body)
+           {
+               onMessageHandler(destination, body); // 메시지 라우팅
+           }})
 {
 }
 
@@ -38,12 +38,11 @@ StompInterface::~StompInterface()
 // Core에 시작 명령
 // url을 start할 떄 넘겨준다.
 // Core가 TCP 일 떄도 동일하게 동작할 수 있느냐?
-void StompInterface::start()
+void StompInterface::start(const std::string &url)
 {
-    // stopRequested 초기화
     // 시작 상태라 stopRequested false로 설정
     stopRequested = false;
-    core.start();
+    core.start(url);
 }
 
 // Core에 종료 명령
@@ -90,7 +89,6 @@ void StompInterface::sub(const std::string &topic, std::function<void(const std:
 // 수신 메시지를 구독 목록에서 찾아 콜백 실행
 void StompInterface::onMessageHandler(const std::string &destination, const std::string &body)
 {
-
     // lock_guard : 잠금을 자동을 관리하는 RAII 클래스
     // 잠굴 대상 : subMutext
     // 여러 쓰레드가 subscriptions에 접근하는 걸 막아 데이터 충돌 방지

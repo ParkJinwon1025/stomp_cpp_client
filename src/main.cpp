@@ -7,6 +7,7 @@
 // 재연결 루프
 void reconnectLoop(
     StompInterface &stomp,
+    const std::string &url,           // url을 reconnectLoop에서 넘김
     std::atomic<bool> &stopRequested, // 멀티 스레드 안전 종료 신호 플래그
     int reconnectDelaySec = 3)        // 재연결 대기 시간
 {
@@ -23,7 +24,7 @@ void reconnectLoop(
 
     while (!stopRequested) // 종료 신호 올 때까지 반복
     {
-        stomp.start(); // 연결 시도
+        stomp.start(url); // url을 start할 때 넘김
 
         // 연결될 때까지 최대 5초 대기
         int waited = 0;
@@ -104,8 +105,9 @@ int main()
 {
     std::atomic<bool> stopRequested{false}; // 종료 신호 플래그 초기화
 
+    const std::string url = "ws://localhost:9030/stomp/websocket"; // 서버 주소
+
     StompInterface stomp(
-        "ws://localhost:9030/stomp/websocket", // 서버 주소
         {[]()
          { std::cout << "[INFO] server connected.\n"; }, // 연결 시 출력
          []()
@@ -113,7 +115,7 @@ int main()
 
     // 재연결 루프를 별도 스레드에서 실행
     std::thread reconnectThread([&]()
-                                { reconnectLoop(stomp, stopRequested); });
+                                { reconnectLoop(stomp, url, stopRequested); });
 
     // 메인 스레드에서 사용자 입력 처리
     // 사용자의 입력을 기다려야 해서 블로킹

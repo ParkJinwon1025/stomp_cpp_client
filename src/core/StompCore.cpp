@@ -6,10 +6,8 @@
 // 핵심 통신 로직 담당
 
 // 생성자
-StompCore::StompCore(const std::string &url, Handlers handlers)
-    : uri(url),
-      host(parseHost(url)),
-      handlers(std::move(handlers))
+StompCore::StompCore(Handlers handlers)
+    : handlers(std::move(handlers))
 {
 }
 
@@ -31,11 +29,15 @@ std::string StompCore::parseHost(const std::string &url) const
 }
 
 // WebSocket 연결 시작
-void StompCore::start()
+void StompCore::start(const std::string &url)
 {
     // Stop이 호출되었을 경우 시작 안함
     if (stopRequested)
         return;
+
+    // uri, host 설정
+    uri = url;
+    host = parseHost(url);
 
     // 이전 wsThread가 살아 있으면
     if (wsThread.joinable())
@@ -49,7 +51,6 @@ void StompCore::start()
 // WebSocket 연결 종료 및 스레드 정리
 void StompCore::stop()
 {
-
     // 이미 Stop 했으면 중복실행 방지
     if (stopRequested.exchange(true))
         return;
@@ -58,7 +59,7 @@ void StompCore::stop()
         // clientMutex 잠금 후 안전하게 접근
         std::lock_guard<std::mutex> lock(clientMutex);
 
-        // cuurentClient가 연결 된 상태면
+        // currentClient가 연결 된 상태면
         if (currentClient)
             currentClient->stop();
     }
@@ -95,9 +96,9 @@ void StompCore::tryConnect()
 
             // 현재 연결 핸들 저장
             hdl = h;
-            
-            // 현재 클라이언트 주소 저장, isConnected true 반환 
-            // =>  currentClient가 nullptr이 아니면 true 반환
+
+            // 현재 클라이언트 주소 저장, isConnected true 반환
+            // => currentClient가 nullptr이 아니면 true 반환
             currentClient = &c;
         }
         sendConnectFrame(c); // STOMP 핸드셰이크
@@ -116,7 +117,7 @@ void StompCore::tryConnect()
                         {
         {
             std::lock_guard<std::mutex> lock(clientMutex);
-            currentClient = nullptr; // 연결 실패시 클라이언트 초기화 
+            currentClient = nullptr; // 연결 끊겼을 시 클라이언트 초기화
         }
         // 핸들러가 있으면 콜백함수 실행
         if (handlers.onDisconnect)
@@ -127,12 +128,11 @@ void StompCore::tryConnect()
                        {
         {
             std::lock_guard<std::mutex> lock(clientMutex);
-            currentClient = nullptr; // 연결 끊겼을 시 클라이언트 초기화 
+            currentClient = nullptr; // 연결 실패시 클라이언트 초기화
         }
 
         // 핸들러가 있으면 콜백함수 실행
         if (handlers.onDisconnect)
-            // 로그 찍기
             handlers.onDisconnect(); });
 
     websocketpp::lib::error_code ec;
@@ -160,7 +160,7 @@ void StompCore::tryConnect()
     // 연결 상태를 유지하면서 이벤트 대기
     // Websocket 서버가 연결 끊거나 연결 실패하거나 stop 호출시 c.run이 종료됨. (감지할 대상이 없어서)
     // 새 데이터 수신(message handler), 연결 끊김(close_handler), 연결 실패(fail_handler), stop() 호출
-    // 연결 끊으면 c.run()이 내부에서 감지해서 close_handler 실행 => cuuretClient = nullptr  => onDisconnecct 콜백 호출 => run 종료 => 블로킹 해제 => 쓰레드 종료
+    // 연결 끊으면 c.run()이 내부에서 감지해서 close_handler 실행 => currentClient = nullptr => onDisconnect 콜백 호출 => run 종료 => 블로킹 해제 => 쓰레드 종료
     // 서버에서 오는 STOMP 메시지 수신 및 연결 감지
     c.run();
 
@@ -197,7 +197,7 @@ void StompCore::pub(const std::string &destination, const std::string &body)
     // WebSocket으로 데이터를 전송
     // hdl : 어느 연결로 보낼지 식별하는 핸들
     // frame : 전송할 데이터
-    // websockettpp::frame::opcode::text : 전송 형식
+    // websocketpp::frame::opcode::text : 전송 형식
     // ec : 에러 담을 변수
     currentClient->send(hdl, frame, websocketpp::frame::opcode::text, ec);
 }
@@ -276,7 +276,6 @@ void StompCore::parseMessage(const std::string &payload)
 
     // onMessage 콜백이 있으면
     if (handlers.onMessage)
-
         // onMessageHandler로 전달
         handlers.onMessage(destination, body);
 }

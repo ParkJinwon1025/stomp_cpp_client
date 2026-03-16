@@ -13,14 +13,14 @@ public:
         std::function<void()> onDisconnect;
     };
 
-    StompInterface(const std::string &url, Handlers handlers = {});
+    StompInterface(Handlers handlers = {}); // url 제거
     ~StompInterface();
 
     StompInterface(const StompInterface &) = delete;
     StompInterface &operator=(const StompInterface &) = delete;
 
     // Core에 시작 명령
-    void start();
+    void start(const std::string &url);
 
     // Core에 종료 명령
     void stop();

@@ -23,14 +23,14 @@ public:
         std::function<void(const std::string &, const std::string &)> onMessage;
     };
 
-    StompCore(const std::string &url, Handlers handlers);
+    StompCore(Handlers handlers); // url 제거
     ~StompCore();
 
     StompCore(const StompCore &) = delete;
     StompCore &operator=(const StompCore &) = delete;
 
     // WebSocket 연결 시작
-    void start();
+    void start(const std::string &url);
 
     // WebSocket 연결 종료
     void stop();
