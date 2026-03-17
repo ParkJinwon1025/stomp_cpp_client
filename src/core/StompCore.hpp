@@ -20,7 +20,7 @@ public:
     {
         std::function<void()> onConnect;
         std::function<void()> onDisconnect;
-        std::function<void(const std::string &)> onRawMessage; // raw payload만 위로 올림
+        std::function<void(const std::string &)> onRawMessage;
     };
 
     StompCore(Handlers handlers);
@@ -29,16 +29,9 @@ public:
     StompCore(const StompCore &) = delete;
     StompCore &operator=(const StompCore &) = delete;
 
-    // WebSocket 연결 시작
     void start(const std::string &url);
-
-    // WebSocket 연결 종료
     void stop();
-
-    // raw string 전송만 담당
     void send(const std::string &rawFrame);
-
-    // 연결 상태 확인
     bool isConnected() const;
 
 private:
@@ -52,9 +45,6 @@ private:
     std::atomic<bool> stopRequested{false};
     std::thread wsThread;
 
-    // 실제 WebSocket 연결 및 이벤트 루프 실행
     void tryConnect();
-
-    // URL에서 호스트명 추출 (start 내부용)
     std::string parseHost(const std::string &url) const;
 };

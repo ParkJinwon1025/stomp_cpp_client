@@ -1,14 +1,10 @@
 #include "StompInterface.hpp"
 
-// 싱글톤 생성자 - Core 핸들러 연결
 StompInterface::StompInterface()
     : core(
           {[this]()
            {
-               // WebSocket 연결 완료 → STOMP CONNECT 프레임 전송
-               std::string host = "localhost"; // core에서 host 가져오는 방법 추가 필요
                core.send(buildConnectFrame(host));
-
                if (handlers.onConnect)
                    handlers.onConnect();
            },
@@ -19,7 +15,7 @@ StompInterface::StompInterface()
            },
            [this](const std::string &payload)
            {
-               parseMessage(payload); // raw payload 파싱
+               parseMessage(payload);
            }})
 {
 }
@@ -29,20 +25,26 @@ StompInterface::~StompInterface()
     stop();
 }
 
-// 핸들러 초기화
 void StompInterface::init(Handlers h)
 {
     handlers = std::move(h);
 }
 
-// Core에 시작 명령
 void StompInterface::start(const std::string &url)
 {
+    // url에서 host 추출 후 저장
+    auto pos = url.find("://");
+    if (pos != std::string::npos)
+    {
+        pos += 3;
+        auto end = url.find_first_of(":/", pos);
+        host = url.substr(pos, end - pos);
+    }
+
     stopRequested = false;
     core.start(url);
 }
 
-// Core에 종료 명령
 void StompInterface::stop()
 {
     if (stopRequested.exchange(true))
@@ -50,13 +52,11 @@ void StompInterface::stop()
     core.stop();
 }
 
-// 연결 상태 확인
 bool StompInterface::isConnected() const
 {
     return core.isConnected();
 }
 
-// STOMP SEND 프레임 조립 후 core.send()
 void StompInterface::pub(const std::string &destination, const std::string &body)
 {
     if (!core.isConnected())
@@ -64,7 +64,6 @@ void StompInterface::pub(const std::string &destination, const std::string &body
     core.send(buildPubFrame(destination, body));
 }
 
-// 구독 목록 저장 후 STOMP SUBSCRIBE 프레임 조립 후 core.send()
 void StompInterface::sub(const std::string &topic, std::function<void(const std::string &, const std::string &)> callback)
 {
     {
@@ -75,7 +74,7 @@ void StompInterface::sub(const std::string &topic, std::function<void(const std:
 }
 
 // ========================
-// STOMP 프레임 조립 함수들
+// STOMP 프레임 조립
 // ========================
 
 std::string StompInterface::buildConnectFrame(const std::string &host) const
@@ -113,7 +112,6 @@ std::string StompInterface::buildSubFrame(const std::string &topic, const std::s
 // 파싱 및 라우팅
 // ========================
 
-// raw payload → STOMP 파싱
 void StompInterface::parseMessage(const std::string &payload)
 {
     auto firstNewline = payload.find('\n');
@@ -123,12 +121,11 @@ void StompInterface::parseMessage(const std::string &payload)
     std::string frameType = payload.substr(0, firstNewline);
 
     if (frameType == "CONNECTED")
-        return; // STOMP 핸드셰이크 응답 → 무시
+        return;
 
     if (frameType != "MESSAGE")
-        return; // MESSAGE 프레임만 처리
+        return;
 
-    // destination 추출
     std::string destination;
     auto destPos = payload.find("destination:");
     if (destPos != std::string::npos)
@@ -137,7 +134,6 @@ void StompInterface::parseMessage(const std::string &payload)
         destination = payload.substr(destPos + 12, destEnd - destPos - 12);
     }
 
-    // body 추출
     auto bodyPos = payload.find("\n\n");
     if (bodyPos == std::string::npos)
         return;
@@ -149,7 +145,6 @@ void StompInterface::parseMessage(const std::string &payload)
     onMessageHandler(destination, body);
 }
 
-// 구독 라우팅
 void StompInterface::onMessageHandler(const std::string &destination, const std::string &body)
 {
     std::lock_guard<std::mutex> lock(subMutex);

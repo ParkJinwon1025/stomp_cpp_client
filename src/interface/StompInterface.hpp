@@ -15,40 +15,37 @@ public:
         std::function<void()> onDisconnect;
     };
 
-    // 싱글톤 접근점
+    // 싱글톤
+    // 전역 접근점
+    // 연결은 항상 하나고 sub가 같은 벡터에 쌓여서 라우팅이 정확함
+    // start/stop 관리 포인트가 하나
     static StompInterface &getInstance()
     {
-        static StompInterface instance;
+        static StompInterface instance; // 최초 1회만 생성
         return instance;
     }
 
+    // 2. 복사/대입 금지
     StompInterface(const StompInterface &) = delete;
     StompInterface &operator=(const StompInterface &) = delete;
 
-    // 핸들러 설정 (getInstance 후 초기화용)
     void init(Handlers handlers);
 
-    // Core에 시작 명령
     void start(const std::string &url);
-
-    // Core에 종료 명령
     void stop();
-
-    // 연결 상태 확인
     bool isConnected() const;
 
-    // STOMP SEND 프레임 조립 후 전송
     void pub(const std::string &destination, const std::string &body);
-
-    // STOMP SUBSCRIBE 프레임 조립 후 전송
     void sub(const std::string &topic, std::function<void(const std::string &, const std::string &)> callback = nullptr);
 
 private:
-    StompInterface(); // 싱글톤이므로 private
+    // 생성자 private
+    StompInterface();
     ~StompInterface();
 
     Handlers handlers;
     StompCore core;
+    std::string host;
     std::atomic<bool> stopRequested{false};
 
     struct Subscription
@@ -59,14 +56,10 @@ private:
     std::vector<Subscription> subscriptions;
     std::mutex subMutex;
 
-    // STOMP 프레임 조립 함수들
     std::string buildConnectFrame(const std::string &host) const;
     std::string buildPubFrame(const std::string &destination, const std::string &body) const;
     std::string buildSubFrame(const std::string &topic, const std::string &subId) const;
 
-    // raw payload → STOMP 파싱 후 라우팅
     void parseMessage(const std::string &payload);
-
-    // 구독 라우팅
     void onMessageHandler(const std::string &destination, const std::string &body);
 };

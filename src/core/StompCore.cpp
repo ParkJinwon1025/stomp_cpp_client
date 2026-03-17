@@ -1,8 +1,5 @@
 #include "StompCore.hpp"
 
-// WebSocket 연결/해제, raw 전송만 담당
-// STOMP 관련 로직은 StompInterface로 이동
-
 StompCore::StompCore(Handlers handlers)
     : handlers(std::move(handlers))
 {
@@ -13,7 +10,6 @@ StompCore::~StompCore()
     stop();
 }
 
-// URL에서 호스트명 추출 (start 내부용)
 std::string StompCore::parseHost(const std::string &url) const
 {
     auto start = url.find("://");
@@ -24,7 +20,6 @@ std::string StompCore::parseHost(const std::string &url) const
     return url.substr(start, end - start);
 }
 
-// WebSocket 연결 시작
 void StompCore::start(const std::string &url)
 {
     if (stopRequested)
@@ -40,7 +35,6 @@ void StompCore::start(const std::string &url)
                            { tryConnect(); });
 }
 
-// WebSocket 연결 종료 및 스레드 정리
 void StompCore::stop()
 {
     if (stopRequested.exchange(true))
@@ -56,14 +50,12 @@ void StompCore::stop()
         wsThread.detach();
 }
 
-// 연결 상태 확인
 bool StompCore::isConnected() const
 {
     std::lock_guard<std::mutex> lock(clientMutex);
     return currentClient != nullptr;
 }
 
-// raw string 전송만 담당
 void StompCore::send(const std::string &rawFrame)
 {
     std::lock_guard<std::mutex> lock(clientMutex);
@@ -74,7 +66,6 @@ void StompCore::send(const std::string &rawFrame)
     currentClient->send(hdl, rawFrame, websocketpp::frame::opcode::text, ec);
 }
 
-// 실제 WebSocket 연결 및 이벤트 루프 실행
 void StompCore::tryConnect()
 {
     ws_client c;
@@ -84,20 +75,18 @@ void StompCore::tryConnect()
 
     c.set_open_handler([this, &c](websocketpp::connection_hdl h)
                        {
-                           {
-                               std::lock_guard<std::mutex> lock(clientMutex);
-                               hdl = h;
-                               currentClient = &c;
-                           }
-                           if (handlers.onConnect)
-                               handlers.onConnect(); // STOMP CONNECT 프레임은 Interface에서 처리
-                       });
+        {
+            std::lock_guard<std::mutex> lock(clientMutex);
+            hdl = h;
+            currentClient = &c;
+        }
+        if (handlers.onConnect)
+            handlers.onConnect(); });
 
     c.set_message_handler([this](websocketpp::connection_hdl, ws_client::message_ptr msg)
                           {
-                              if (handlers.onRawMessage)
-                                  handlers.onRawMessage(msg->get_payload()); // raw payload만 위로 올림
-                          });
+        if (handlers.onRawMessage)
+            handlers.onRawMessage(msg->get_payload()); });
 
     c.set_close_handler([this](websocketpp::connection_hdl)
                         {
