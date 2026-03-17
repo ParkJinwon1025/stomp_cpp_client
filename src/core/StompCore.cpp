@@ -235,6 +235,7 @@ void StompCore::sendConnectFrame(ws_client &c)
     frame.push_back('\0');
 
     // 서버에 connect 프레임 전송
+    // send만 하게
     c.send(hdl, frame, websocketpp::frame::opcode::text);
 }
 

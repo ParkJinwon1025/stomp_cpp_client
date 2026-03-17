@@ -5,6 +5,8 @@
 // 메시지 라우팅
 // interface와 start의 구조가 비슷해지는 게 파라미터 없이 그대로 넘겨주기 때문임. (Core 코드를 그대로 실행)
 // 지금 코드도 나쁘지는 않음.
+// 스톰프에 대한 인터페이스만
+// 코어부가 바뀌었을 때 중간자의 역할로서 어떻게 연결
 
 // Core와 Interface 연결
 StompInterface::StompInterface(Handlers handlers)
@@ -93,7 +95,7 @@ void StompInterface::onMessageHandler(const std::string &destination, const std:
     // 잠굴 대상 : subMutext
     // 여러 쓰레드가 subscriptions에 접근하는 걸 막아 데이터 충돌 방지
     std::lock_guard<std::mutex> lock(subMutex); // 멀티 쓰레드에서 안전하게 subscriptions 접근
-    for (const auto &s : subscriptions)         // 구독 목록 순회
+    for (const auto &s : subscriptions)         // 구독 목록 순회 // const, auto , &
     {
         if (s.topic == destination && s.callback) // 일치하는 콜백 있으면
         {

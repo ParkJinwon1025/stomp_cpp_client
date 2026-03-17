@@ -4,128 +4,60 @@
 #include <atomic>
 #include <chrono>
 
-// 재연결 루프
-void reconnectLoop(
-    StompInterface &stomp,
-    const std::string &url,           // url을 reconnectLoop에서 넘김
-    std::atomic<bool> &stopRequested, // 멀티 스레드 안전 종료 신호 플래그
-    int reconnectDelaySec = 3)        // 재연결 대기 시간
-{
-    // 구독 등록
-    auto doSubscribe = [&]()
-    {
-        stomp.sub("/topic/robot", [&](const std::string &destination, const std::string &body)
-                  {
-                      std::cout << "[received] destination: " << destination << std::endl;    // 수신 destination 출력
-                      std::cout << "[received] body: " << body << std::endl;                  // 수신 body 출력
-                      stomp.pub("/app/ubisam", "{\"type\":\"response\",\"message\":\"ok\"}"); // 응답 전송
-                  });
-    };
-
-    while (!stopRequested) // 종료 신호 올 때까지 반복
-    {
-        stomp.start(url); // url을 start할 때 넘김
-
-        // 연결될 때까지 최대 5초 대기
-        int waited = 0;
-        while (!stomp.isConnected() && !stopRequested && waited < 50)
-        {
-            // start()가 논블로킹이라 wsThread가 연결 완료할 때까지 100ms마다 체크하며 대기 (최대 5초)
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            waited++;
-        }
-
-        if (stomp.isConnected()) // 연결 성공 시
-        {
-            doSubscribe(); // 구독 등록
-
-            // 끊길 때까지 대기(1초마다 확인하면서 기다림)
-            while (stomp.isConnected() && !stopRequested)
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-
-        if (stopRequested) // 종료 신호 시 즉시 종료
-            return;
-
-        // 재연결 카운트다운
-        for (int i = reconnectDelaySec; i > 0; i--)
-        {
-            // quit 입력
-            if (stopRequested)
-                return;
-            std::cout << "[reconnecting...] " << i << "s" << std::endl;
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-    }
-}
-
-// 사용자 입력 처리
-void inputLoop(
-    StompInterface &stomp,
-    std::atomic<bool> &stopRequested) // 종료 신호 플래그
-{
-    std::string input;
-    std::cout << "enter message (quit to exit)\n"
-              << std::endl;
-
-    while (true)
-    {
-        std::getline(std::cin, input);
-
-        if (input.empty()) // 빈 입력 무시
-            continue;
-
-        if (input == "quit") // quit 입력 시 종료
-        {
-            stopRequested = true;
-            stomp.stop();
-            break;
-        }
-
-        if (!stomp.isConnected()) // 연결 안 됐으면 경고
-        {
-            std::cout << "[warning] not connected.\n";
-            continue;
-        }
-
-        // { 로 시작하면 JSON 그대로, 아니면 JSON으로 감싸기
-        std::string body;
-        if (!input.empty() && input.front() == '{')
-            body = input;
-        else
-            body = "{\"type\":\"status\",\"message\":\"" + input + "\"}";
-
-        std::cout << "[send] destination: /app/ubisam" << std::endl;
-        std::cout << "[send] body: " << body << std::endl;
-        stomp.pub("/app/ubisam", body); // 전송
-    }
-}
-
 int main()
 {
     std::atomic<bool> stopRequested{false}; // 종료 신호 플래그 초기화
 
     const std::string url = "ws://localhost:9030/stomp/websocket"; // 서버 주소
 
+    // StompInterface 생성
     StompInterface stomp(
         {[]()
          { std::cout << "[INFO] server connected.\n"; }, // 연결 시 출력
          []()
          { std::cout << "[INFO] server disconnected.\n"; }}); // 해제 시 출력
 
-    // 재연결 루프를 별도 스레드에서 실행
-    std::thread reconnectThread([&]()
-                                { reconnectLoop(stomp, url, stopRequested); });
+    // 1. start() 테스트
+    std::cout << "[TEST] start()" << std::endl;
+    stomp.start(url);
 
-    // 메인 스레드에서 사용자 입력 처리
-    // 사용자의 입력을 기다려야 해서 블로킹
-    // 블로킹 : 작업이 완료될 때까지 기다림.
-    // stopRequested : 프로그램 종료 신호 플래그
-    inputLoop(stomp, stopRequested);
+    // 연결될 때까지 최대 5초 대기
+    int waited = 0;
+    while (!stomp.isConnected() && waited < 50)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        waited++;
+    }
 
-    // reconnectThread 종료될 때까지 대기 후 프로그램 종료
-    if (reconnectThread.joinable())
-        reconnectThread.join();
+    // 2. isConnected() 테스트
+    std::cout << "[TEST] isConnected(): " << (stomp.isConnected() ? "true" : "false") << std::endl;
+
+    if (stomp.isConnected())
+    {
+        // 3. sub() 테스트
+        std::cout << "[TEST] sub()" << std::endl;
+        stomp.sub("/topic/robot", [&](const std::string &destination, const std::string &body)
+                  {
+            std::cout << "[received] destination: " << destination << std::endl;
+            std::cout << "[received] body: " << body << std::endl;
+
+            // 4. pub() 테스트
+            std::cout << "[TEST] pub()" << std::endl;
+            stomp.pub("/app/ubisam", "{\"type\":\"response\",\"message\":\"ok\"}"); });
+
+        // pub() 직접 테스트
+        std::cout << "[TEST] pub() 직접 호출" << std::endl;
+        stomp.pub("/app/ubisam", "{\"type\":\"status\",\"message\":\"hello\"}");
+
+        // 3초 대기 (메시지 수신 확인)
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+    }
+
+    // 5. stop() 테스트
+    std::cout << "[TEST] stop()" << std::endl;
+    stomp.stop();
+
+    std::cout << "[TEST] isConnected() after stop: " << (stomp.isConnected() ? "true" : "false") << std::endl;
 
     return 0;
 }
