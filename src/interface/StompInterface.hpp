@@ -3,15 +3,9 @@
 #include <mutex>
 #include <atomic>
 #include <vector>
+#include <functional>
+#include <string>
 
-// 실제 동작부 + 호출부  코어부를 가져다 쓸 때 종속성이 x => 유연성 증가를 위함임.
-// 헝가리안 표기법
-
-// pub/ sub 큐 추가
-// pub : 의도하지 않은 스케줄링 타임에 처리될 수 있음. 큐 필요 / 즉시 발행 큐잉 보완
-// sub : 스케줄러가 로직의 상태를 보고 받을 수 있을 때 던짐.  큐 필요
-
-// 이넡페이스 자체를 싱글톤
 class StompInterface
 {
 public:
@@ -21,11 +15,18 @@ public:
         std::function<void()> onDisconnect;
     };
 
-    StompInterface(Handlers handlers = {}); // url 제거
-    ~StompInterface();
+    // 싱글톤 접근점
+    static StompInterface &getInstance()
+    {
+        static StompInterface instance;
+        return instance;
+    }
 
     StompInterface(const StompInterface &) = delete;
     StompInterface &operator=(const StompInterface &) = delete;
+
+    // 핸들러 설정 (getInstance 후 초기화용)
+    void init(Handlers handlers);
 
     // Core에 시작 명령
     void start(const std::string &url);
@@ -33,19 +34,21 @@ public:
     // Core에 종료 명령
     void stop();
 
-    // Core에 연결 상태 확인 위임
+    // 연결 상태 확인
     bool isConnected() const;
 
-    // 연결 확인 후 Core에 전송 명령
+    // STOMP SEND 프레임 조립 후 전송
     void pub(const std::string &destination, const std::string &body);
 
-    // 구독 목록 저장 후 Core에 구독 명령
+    // STOMP SUBSCRIBE 프레임 조립 후 전송
     void sub(const std::string &topic, std::function<void(const std::string &, const std::string &)> callback = nullptr);
 
 private:
+    StompInterface(); // 싱글톤이므로 private
+    ~StompInterface();
+
     Handlers handlers;
     StompCore core;
-
     std::atomic<bool> stopRequested{false};
 
     struct Subscription
@@ -56,6 +59,14 @@ private:
     std::vector<Subscription> subscriptions;
     std::mutex subMutex;
 
-    // 수신 메시지를 구독 목록에서 찾아 콜백 실행
+    // STOMP 프레임 조립 함수들
+    std::string buildConnectFrame(const std::string &host) const;
+    std::string buildPubFrame(const std::string &destination, const std::string &body) const;
+    std::string buildSubFrame(const std::string &topic, const std::string &subId) const;
+
+    // raw payload → STOMP 파싱 후 라우팅
+    void parseMessage(const std::string &payload);
+
+    // 구독 라우팅
     void onMessageHandler(const std::string &destination, const std::string &body);
 };

@@ -1,21 +1,21 @@
 #include "StompInterface.hpp"
 #include <iostream>
 #include <thread>
-#include <atomic>
 #include <chrono>
 
 int main()
 {
-    std::atomic<bool> stopRequested{false}; // 종료 신호 플래그 초기화
+    const std::string url = "ws://localhost:9030/stomp/websocket";
 
-    const std::string url = "ws://localhost:9030/stomp/websocket"; // 서버 주소
-
-    // StompInterface 생성
-    StompInterface stomp(
+    // 싱글톤 접근 + 핸들러 초기화
+    StompInterface::getInstance().init(
         {[]()
-         { std::cout << "[INFO] server connected.\n"; }, // 연결 시 출력
+         { std::cout << "[INFO] server connected.\n"; },
          []()
-         { std::cout << "[INFO] server disconnected.\n"; }}); // 해제 시 출력
+         { std::cout << "[INFO] server disconnected.\n"; }});
+
+    // 편의상 별칭
+    auto &stomp = StompInterface::getInstance();
 
     // 1. start() 테스트
     std::cout << "[TEST] start()" << std::endl;
@@ -49,7 +49,6 @@ int main()
         std::cout << "[TEST] pub() 직접 호출" << std::endl;
         stomp.pub("/app/ubisam", "{\"type\":\"status\",\"message\":\"hello\"}");
 
-        // 3초 대기 (메시지 수신 확인)
         std::this_thread::sleep_for(std::chrono::seconds(3));
     }
 

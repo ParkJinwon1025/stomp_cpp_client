@@ -20,10 +20,10 @@ public:
     {
         std::function<void()> onConnect;
         std::function<void()> onDisconnect;
-        std::function<void(const std::string &, const std::string &)> onMessage;
+        std::function<void(const std::string &)> onRawMessage; // raw payload만 위로 올림
     };
 
-    StompCore(Handlers handlers); // url 제거
+    StompCore(Handlers handlers);
     ~StompCore();
 
     StompCore(const StompCore &) = delete;
@@ -35,11 +35,8 @@ public:
     // WebSocket 연결 종료
     void stop();
 
-    // STOMP SEND 프레임 조립 및 전송
-    void pub(const std::string &destination, const std::string &body);
-
-    // STOMP SUBSCRIBE 프레임 조립 및 전송
-    void sub(const std::string &topic, const std::string &subId);
+    // raw string 전송만 담당
+    void send(const std::string &rawFrame);
 
     // 연결 상태 확인
     bool isConnected() const;
@@ -51,19 +48,13 @@ private:
 
     ws_client *currentClient{nullptr};
     websocketpp::connection_hdl hdl;
-    mutable std::mutex clientMutex; // isConnected()에서 const이므로 mutable
+    mutable std::mutex clientMutex;
     std::atomic<bool> stopRequested{false};
     std::thread wsThread;
 
     // 실제 WebSocket 연결 및 이벤트 루프 실행
     void tryConnect();
 
-    // STOMP 핸드셰이크 프레임 전송
-    void sendConnectFrame(ws_client &c);
-
-    // raw payload를 STOMP 프레임으로 파싱 후 콜백 호출
-    void parseMessage(const std::string &payload);
-
-    // URL에서 호스트명 추출
+    // URL에서 호스트명 추출 (start 내부용)
     std::string parseHost(const std::string &url) const;
 };
