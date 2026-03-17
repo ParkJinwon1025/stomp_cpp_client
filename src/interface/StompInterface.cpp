@@ -4,7 +4,7 @@ StompInterface::StompInterface()
     : core(
           {[this]()
            {
-               core.send(buildConnectFrame(host));
+               core.Pub(Frame_BuildConnect(host));
                if (handlers.onConnect)
                    handlers.onConnect();
            },
@@ -15,14 +15,14 @@ StompInterface::StompInterface()
            },
            [this](const std::string &payload)
            {
-               parseMessage(payload);
+               Message_Parse(payload);
            }})
 {
 }
 
 StompInterface::~StompInterface()
 {
-    stop();
+    Connection_End();
 }
 
 void StompInterface::init(Handlers h)
@@ -30,9 +30,8 @@ void StompInterface::init(Handlers h)
     handlers = std::move(h);
 }
 
-void StompInterface::start(const std::string &url)
+void StompInterface::Connection_Start(const std::string &url)
 {
-    // url에서 host 추출 후 저장
     auto pos = url.find("://");
     if (pos != std::string::npos)
     {
@@ -42,49 +41,49 @@ void StompInterface::start(const std::string &url)
     }
 
     stopRequested = false;
-    core.start(url);
+    core.Start(url);
 }
 
-void StompInterface::stop()
+void StompInterface::Connection_End()
 {
     if (stopRequested.exchange(true))
         return;
-    core.stop();
+    core.End();
 }
 
-bool StompInterface::isConnected() const
+bool StompInterface::Connection_IsAlive() const
 {
-    return core.isConnected();
+    return core.IsConnected();
 }
 
-void StompInterface::pub(const std::string &destination, const std::string &body)
+void StompInterface::Message_Publish(const std::string &destination, const std::string &body)
 {
-    if (!core.isConnected())
+    if (!core.IsConnected())
         return;
-    core.send(buildPubFrame(destination, body));
+    core.Pub(Frame_BuildPub(destination, body));
 }
 
-void StompInterface::sub(const std::string &topic, std::function<void(const std::string &, const std::string &)> callback)
+void StompInterface::Message_Subscribe(const std::string &topic, std::function<void(const std::string &, const std::string &)> callback)
 {
     {
         std::lock_guard<std::mutex> lock(subMutex);
         subscriptions.push_back({topic, callback});
     }
-    core.send(buildSubFrame(topic, "sub-" + std::to_string(subscriptions.size() - 1)));
+    core.Sub(Frame_BuildSub(topic, "sub-" + std::to_string(subscriptions.size() - 1)));
 }
 
 // ========================
 // STOMP 프레임 조립
 // ========================
 
-std::string StompInterface::buildConnectFrame(const std::string &host) const
+std::string StompInterface::Frame_BuildConnect(const std::string &host) const
 {
     std::string frame = "CONNECT\naccept-version:1.2\nhost:" + host + "\n\n";
     frame.push_back('\0');
     return frame;
 }
 
-std::string StompInterface::buildPubFrame(const std::string &destination, const std::string &body) const
+std::string StompInterface::Frame_BuildPub(const std::string &destination, const std::string &body) const
 {
     std::string frame =
         "SEND\n"
@@ -96,7 +95,7 @@ std::string StompInterface::buildPubFrame(const std::string &destination, const 
     return frame;
 }
 
-std::string StompInterface::buildSubFrame(const std::string &topic, const std::string &subId) const
+std::string StompInterface::Frame_BuildSub(const std::string &topic, const std::string &subId) const
 {
     std::string frame =
         "SUBSCRIBE\n"
@@ -112,7 +111,7 @@ std::string StompInterface::buildSubFrame(const std::string &topic, const std::s
 // 파싱 및 라우팅
 // ========================
 
-void StompInterface::parseMessage(const std::string &payload)
+void StompInterface::Message_Parse(const std::string &payload)
 {
     auto firstNewline = payload.find('\n');
     if (firstNewline == std::string::npos)
@@ -142,10 +141,10 @@ void StompInterface::parseMessage(const std::string &payload)
     if (!body.empty() && body.back() == '\0')
         body.pop_back();
 
-    onMessageHandler(destination, body);
+    Message_Route(destination, body);
 }
 
-void StompInterface::onMessageHandler(const std::string &destination, const std::string &body)
+void StompInterface::Message_Route(const std::string &destination, const std::string &body)
 {
     std::lock_guard<std::mutex> lock(subMutex);
     for (const auto &s : subscriptions)

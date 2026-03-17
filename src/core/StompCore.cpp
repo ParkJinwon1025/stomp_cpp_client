@@ -7,10 +7,10 @@ StompCore::StompCore(Handlers handlers)
 
 StompCore::~StompCore()
 {
-    stop();
+    End();
 }
 
-std::string StompCore::parseHost(const std::string &url) const
+std::string StompCore::ParseHost(const std::string &url) const
 {
     auto start = url.find("://");
     if (start == std::string::npos)
@@ -20,22 +20,22 @@ std::string StompCore::parseHost(const std::string &url) const
     return url.substr(start, end - start);
 }
 
-void StompCore::start(const std::string &url)
+void StompCore::Start(const std::string &url)
 {
     if (stopRequested)
         return;
 
     uri = url;
-    host = parseHost(url);
+    host = ParseHost(url);
 
     if (wsThread.joinable())
         wsThread.join();
 
     wsThread = std::thread([this]()
-                           { tryConnect(); });
+                           { TryConnect(); });
 }
 
-void StompCore::stop()
+void StompCore::End()
 {
     if (stopRequested.exchange(true))
         return;
@@ -50,13 +50,13 @@ void StompCore::stop()
         wsThread.detach();
 }
 
-bool StompCore::isConnected() const
+bool StompCore::IsConnected() const
 {
     std::lock_guard<std::mutex> lock(clientMutex);
     return currentClient != nullptr;
 }
 
-void StompCore::send(const std::string &rawFrame)
+void StompCore::Pub(const std::string &rawFrame)
 {
     std::lock_guard<std::mutex> lock(clientMutex);
     if (!currentClient)
@@ -66,7 +66,17 @@ void StompCore::send(const std::string &rawFrame)
     currentClient->send(hdl, rawFrame, websocketpp::frame::opcode::text, ec);
 }
 
-void StompCore::tryConnect()
+void StompCore::Sub(const std::string &rawFrame)
+{
+    std::lock_guard<std::mutex> lock(clientMutex);
+    if (!currentClient)
+        return;
+
+    websocketpp::lib::error_code ec;
+    currentClient->send(hdl, rawFrame, websocketpp::frame::opcode::text, ec);
+}
+
+void StompCore::TryConnect()
 {
     ws_client c;
     c.clear_access_channels(websocketpp::log::alevel::all);

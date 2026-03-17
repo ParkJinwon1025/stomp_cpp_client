@@ -29,10 +29,11 @@ public:
     StompCore(const StompCore &) = delete;
     StompCore &operator=(const StompCore &) = delete;
 
-    void start(const std::string &url);
-    void stop();
-    void send(const std::string &rawFrame);
-    bool isConnected() const;
+    void Start(const std::string &url);
+    void End();
+    void Pub(const std::string &rawFrame);
+    void Sub(const std::string &rawFrame);
+    bool IsConnected() const;
 
 private:
     std::string uri;
@@ -45,6 +46,6 @@ private:
     std::atomic<bool> stopRequested{false};
     std::thread wsThread;
 
-    void tryConnect();
-    std::string parseHost(const std::string &url) const;
+    void TryConnect();
+    std::string ParseHost(const std::string &url) const;
 };
