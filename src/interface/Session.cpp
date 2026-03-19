@@ -11,7 +11,6 @@ Session::Session()
                core.Pub(BuildConnectFrame()); // STOMP CONNECT 프레임 전송
 
                ReRegisterSubscriptions(); // 재연결 시 구독 목록 복구
-
            },
            // 연결 끊김 시: ioService, stompReady 초기화
            [this]()
@@ -28,16 +27,17 @@ Session::Session()
 {
 }
 
+// 소멸자
 Session::~Session()
 {
     Disconnect(); // 소멸 시 자동 연결 종료
 }
 
+// URL 저장 및 Host 추출
 void Session::Init(const std::string &u)
 {
     url = u;
 
-    // URL에서 호스트명 추출 (예: ws://192.168.0.1:9030 → 192.168.0.1)
     auto pos = url.find("://");
     if (pos != std::string::npos)
     {
@@ -47,15 +47,19 @@ void Session::Init(const std::string &u)
     }
 }
 
+// 연결
 void Session::Connect()
 {
+    // 종료  요청 플래그
     stopRequested = false;
     LOG("[SESSION] connect -> " << url);
     core.Start(url); // WebSocket 연결 시작 (별도 스레드)
 }
 
+// 연결 해제
 void Session::Disconnect()
 {
+    //
     if (stopRequested.exchange(true)) // 이미 종료 요청된 경우 중복 실행 방지
         return;
 
@@ -63,11 +67,15 @@ void Session::Disconnect()
     core.End(); // WebSocket 연결 종료
 }
 
+// 연결 여부 확인
 bool Session::IsConnected() const
 {
+    // core.IsConnected() : WebSocket 연결 여부
+    // stompReady : STOMP 서버에게 CONNECTED 응답을 받았는가?
     return core.IsConnected() && stompReady; // WebSocket + STOMP 둘 다 준비된 경우만 true
 }
 
+// 프레임 만들어서 전송
 void Session::Publish(const std::string &destination, const std::string &body)
 {
     core.Pub(BuildSendFrame(destination, body));
@@ -78,6 +86,7 @@ void Session::Subscribe(const std::string &topic, Subscriber *subscriber)
     LOG("[SESSION] subscribe -> " << topic);
 
     {
+        // 재연결 시 재구독 때도 쓰기 때문에 subMutex Lock
         std::lock_guard<std::mutex> lock(subMutex);
         subscriptions.push_back({topic, subscriber}); // 구독 목록에 추가
     }
@@ -85,13 +94,15 @@ void Session::Subscribe(const std::string &topic, Subscriber *subscriber)
     // 이미 연결 중이면 바로 SUBSCRIBE 프레임 전송
     if (IsConnected())
     {
+        // subId 생성
         std::string subId = "sub-" + std::to_string(subscriptions.size() - 1);
+
+        // ASIO 쓰레드에서 프레임 생성 후 core.Sub() 해서 서버에 전송
+        // 내부 큐에 작업 넣기
         Post([this, topic, subId]()
              { core.Sub(BuildSubscribeFrame(topic, subId)); });
     }
 }
-
-
 
 void Session::Post(std::function<void()> task)
 {
@@ -121,7 +132,9 @@ std::string Session::BuildConnectFrame() const
     std::string frame =
         "CONNECT\n"
         "accept-version:1.1,1.2\n"
-        "heart-beat:0,0\n\n";
+        "host:" +
+        host + "\n"
+               "heart-beat:0,0\n\n";
     frame.push_back('\0'); // STOMP 프레임 종료 문자
     return frame;
 }

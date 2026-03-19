@@ -50,11 +50,12 @@ private:
         std::chrono::steady_clock::time_point lastSent; // 마지막 전송 시각
     };
 
-    std::deque<Item> queue; // 즉시 전송 큐
+    std::deque<Item> queue; // 발신 큐
     std::mutex queueMutex;  // 큐 접근 뮤텍스
 
     std::vector<PeriodicItem> periodics; // 주기적 전송 목록
 
+    // 특정 조건이 될 때까지 스레드를 재워두고, 조건이 되면 깨움.
     std::condition_variable cv;       // 큐에 메시지 추가 시 워커 즉시 깨우기용
     std::atomic<bool> running{false}; // 워커 스레드 실행 플래그
     std::thread workerThread;         // 워커 스레드

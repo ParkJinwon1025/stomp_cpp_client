@@ -18,6 +18,13 @@ int main()
     Reconnector reconnector(session);
 
     // 3) 주기적 전송 등록 (Start 전에 등록해야 함)
+
+    // 메시지 업데이트 불가
+    // 메시지가 업데이트되는
+    // remove는 없다
+    // change는 없다
+    // String만 전송이 가능
+    // 유동적인 메시지 전송
     publisher.AddPeriodic("/app/ubisam", "{\"type\":\"heartbeat\",\"message\":\"imalive\"}", 10, true); // 10초마다 heartbeat (timestamp 포함)
     //     .AddPeriodic("/app/ubisam", "{\"type\":\"status\",\"message\":\"on\"}", 5);                    // 5초마다 status
 

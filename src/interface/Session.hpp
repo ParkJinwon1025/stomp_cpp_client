@@ -40,7 +40,7 @@ public:
 private:
     StompCore core;   // WebSocket 실제 연결 담당 코어
     std::string url;  // 서버 URL
-    std::string host; // 서버 호스트명
+    std::string host; // 서버 호스트명 (STOMP CONNECT 프레임 host 헤더용)
 
     // 단일 변수의 읽기/쓰기 보장
     std::atomic<bool> stopRequested{false}; // 종료 요청 플래그 (중복 종료 방지)
