@@ -1,4 +1,13 @@
 #include "StompCore.hpp"
+#include <iostream>
+#include <mutex>
+
+inline std::mutex coreCoutMutex;
+#define CORE_LOG(msg)                                  \
+    {                                                  \
+        std::lock_guard<std::mutex> _l(coreCoutMutex); \
+        std::cout << msg << std::endl;                 \
+    }
 
 StompCore::StompCore(Handlers handlers)
     : handlers(std::move(handlers))
@@ -81,6 +90,7 @@ void StompCore::TryConnect()
     ws_client c;
     c.clear_access_channels(websocketpp::log::alevel::all);
     c.clear_error_channels(websocketpp::log::elevel::all);
+
     c.init_asio();
 
     c.set_open_handler([this, &c](websocketpp::connection_hdl h)
@@ -91,10 +101,11 @@ void StompCore::TryConnect()
             currentClient = &c;
         }
         if (handlers.onConnect)
-            handlers.onConnect(); });
+            handlers.onConnect(c.get_io_service()); });
 
     c.set_message_handler([this](websocketpp::connection_hdl, ws_client::message_ptr msg)
                           {
+        CORE_LOG("[CORE] raw received -> '" << msg->get_payload() << "'");
         if (handlers.onRawMessage)
             handlers.onRawMessage(msg->get_payload()); });
 
@@ -115,6 +126,16 @@ void StompCore::TryConnect()
         }
         if (handlers.onDisconnect)
             handlers.onDisconnect(); });
+
+    c.set_pong_handler([this](websocketpp::connection_hdl, std::string)
+                       {
+        if (handlers.onPong)
+            handlers.onPong(); });
+
+    c.set_pong_timeout_handler([this](websocketpp::connection_hdl, std::string)
+                               {
+        if (handlers.onPongTimeout)
+            handlers.onPongTimeout(); });
 
     websocketpp::lib::error_code ec;
     auto con = c.get_connection(uri, ec);

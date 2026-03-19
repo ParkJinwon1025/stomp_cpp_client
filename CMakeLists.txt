@@ -17,7 +17,9 @@ include_directories(${CMAKE_SOURCE_DIR}/src/interface)
 add_executable(robot_stomp_client
     src/main.cpp
     src/core/StompCore.cpp
-    src/interface/StompInterface.cpp
+    src/interface/Session.cpp
+    src/interface/Publisher.cpp
+    src/interface/Reconnector.cpp
 )
 
 target_link_libraries(robot_stomp_client

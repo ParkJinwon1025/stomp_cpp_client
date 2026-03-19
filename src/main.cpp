@@ -1,76 +1,76 @@
-#include "StompInterface.hpp"
-#include <iostream>
-#include <thread>
-#include <chrono>
+#include "Session.hpp"
+#include "Publisher.hpp"
+#include "Reconnector.hpp"
+#include "Subscriber.hpp"
+#include <windows.h>
+#include <string>
+#include <memory>
 
-// 초기화 및 연결
-void InitAndConnect(StompInterface &stomp, const std::string &url)
+// =============================================================================
+// Subscriber 구현: /topic/robot 수신 처리
+// =============================================================================
+
+class RobotSubscriber : public Subscriber
 {
-    stomp.init(
-        {[]()
-         { std::cout << "[INFO] server connected.\n"; },
-         []()
-         { std::cout << "[INFO] server disconnected.\n"; }});
-
-    std::cout << "[TEST] Connection_Start()" << std::endl;
-    stomp.Connection_Start(url);
-
-    // 연결될 때까지 최대 5초 대기
-    int waited = 0;
-    while (!stomp.Connection_IsAlive() && waited < 50)
+public:
+    void received(const std::string &body, Session &session) override
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        waited++;
+        LOG("[ROBOT] received -> " << body);
+
+        // 응답 발신 예시
+        // session.publish("/app/ubisam", "{\"type\":\"ack\"}");
     }
+};
 
-    std::cout << "[TEST] Connection_IsAlive(): "
-              << (stomp.Connection_IsAlive() ? "true" : "false") << std::endl;
-}
-
-// 구독 및 발행 테스트
-void RunPubSubTest(StompInterface &stomp)
-{
-    std::cout << "[TEST] Message_Subscribe()" << std::endl;
-    stomp.Message_Subscribe("/topic/robot", [&](const std::string &destination, const std::string &body)
-                            {
-        std::cout << "[received] destination: " << destination << std::endl;
-        std::cout << "[received] body: " << body << std::endl;
-
-        std::cout << "[TEST] Message_Publish() in callback" << std::endl;
-        stomp.Message_Publish("/app/ubisam", "{\"type\":\"response\",\"message\":\"ok\"}"); });
-
-    std::cout << "[TEST] Message_Publish() 직접 호출" << std::endl;
-    stomp.Message_Publish("/app/ubisam", "{\"type\":\"status\",\"message\":\"hello\"}");
-
-    // 메시지 수신 대기
-    std::this_thread::sleep_for(std::chrono::seconds(3));
-}
-
-// 종료
-void Shutdown(StompInterface &stomp)
-{
-    std::cout << "[TEST] Connection_End()" << std::endl;
-    stomp.Connection_End();
-
-    std::cout << "[TEST] Connection_IsAlive() after end: "
-              << (stomp.Connection_IsAlive() ? "true" : "false") << std::endl;
-}
+// =============================================================================
+// main
+// =============================================================================
 
 int main()
 {
-    const std::string url = "ws://localhost:9030/stomp/websocket";
+    SetConsoleOutputCP(CP_UTF8);
 
-    // & : 참조
-    // auto : 컴파일러가 타입을 자동으로 추론
-    // const : 값을 변경할 수 없도록 고정하는 키워드
-    auto &stomp = StompInterface::getInstance();
+    // 1) Session 생성 및 초기화
+    Session session;
+    session.init("ws://localhost:9030/stomp/websocket");
 
-    InitAndConnect(stomp, url);
+    // 2) 컴포넌트 생성
+    Publisher publisher(session);
+    Reconnector reconnector(session);
 
-    if (stomp.Connection_IsAlive())
-        RunPubSubTest(stomp);
+    // 3) 연결 성공 시 콜백 등록
+    session.onConnected([&publisher]()
+                        { publisher.flush(); });
 
-    Shutdown(stomp);
+    // 4) Subscriber 등록 - 람다 없이 직접 전달
+    RobotSubscriber robotSub;
+    session.subscribe("/topic/robot", &robotSub);
+
+    // 5) 연결 시작
+    session.connect();
+
+    // 6) 컴포넌트 시작 (연결 실패해도 Reconnector가 재연결 시도)
+    reconnector.start();
+    publisher.start();
+
+    // 7) 입력 루프
+    LOG("[INPUT] Type message to send to /app/ubisam (type 'quit' to exit)");
+    std::string input;
+    while (std::getline(std::cin, input))
+    {
+        if (input == "quit")
+            break;
+        if (input.empty())
+            continue;
+
+        std::string body = "{\"type\":\"message\",\"data\":\"" + input + "\"}";
+        publisher.enqueue("/app/ubisam", body);
+    }
+
+    // 8) 종료
+    reconnector.stop();
+    publisher.stop();
+    session.disconnect();
 
     return 0;
 }

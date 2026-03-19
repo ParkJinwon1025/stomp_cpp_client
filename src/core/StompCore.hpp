@@ -18,9 +18,11 @@ class StompCore
 public:
     struct Handlers
     {
-        std::function<void()> onConnect;
+        std::function<void(asio::io_service &)> onConnect;
         std::function<void()> onDisconnect;
         std::function<void(const std::string &)> onRawMessage;
+        std::function<void()> onPong;        // pong 수신 시
+        std::function<void()> onPongTimeout; // pong 타임아웃 시
     };
 
     StompCore(Handlers handlers);
