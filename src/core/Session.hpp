@@ -43,6 +43,7 @@ public:
 
     void Send(const std::string &destination, const std::string &body);
 
+
     template <typename T>
     void Send(const std::string &destination, const T &data)
     {

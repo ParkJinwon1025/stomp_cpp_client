@@ -29,7 +29,8 @@ void Session::Connect()
     if (wsThread.joinable())
         wsThread.join();
 
-    wsThread = std::thread([this]() { TryConnect(); });
+    wsThread = std::thread([this]()
+                           { TryConnect(); });
 }
 
 void Session::Disconnect()
@@ -135,15 +136,15 @@ void Session::TryConnect()
 
 void Session::Send(const std::string &destination, const std::string &body)
 {
-    std::string json = "{\"payload\":\"" + body + "\"}";
+    // STOMP에 연결이 되지 않은 상태이면 대기 큐에 저장
     if (!stompReady)
     {
         std::lock_guard<std::mutex> lock(pendingMutex);
-        pendingMessages.push_back({destination, json});
+        pendingMessages.push_back({destination, body});
         LOG("[SESSION] Send queued (not ready) -> " << destination);
         return;
     }
-    Pub(BuildSendFrame(destination, json));
+    Pub(BuildSendFrame(destination, body));
 }
 
 void Session::Publish(Publisher *publisher)
