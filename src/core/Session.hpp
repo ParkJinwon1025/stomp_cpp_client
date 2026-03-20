@@ -20,10 +20,10 @@ typedef websocketpp::client<websocketpp::config::asio_client> ws_client;
 
 // 멀티스레드 환경에서 안전하게 콘솔 출력하기 위한 뮤텍스
 inline std::mutex coutMutex;
-#define LOG(msg)                                           \
-    {                                                      \
+#define LOG(msg)                                          \
+    {                                                     \
         std::lock_guard<std::mutex> _log_lock(coutMutex); \
-        std::cout << msg << std::endl;                     \
+        std::cout << msg << std::endl;                    \
     }
 
 class Publisher;
@@ -41,8 +41,7 @@ public:
     void Disconnect();
     bool IsConnected() const;
 
-    void Send(const std::string &destination, const std::string &body);
-
+    void Send(const std::string &destination, const std::string &body); // 문자열 → {"payload":"..."} 래핑
 
     template <typename T>
     void Send(const std::string &destination, const T &data)
