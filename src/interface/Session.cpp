@@ -1,23 +1,24 @@
 #include "Session.hpp"
+#include "Publisher.hpp"
 
 Session::Session()
     : core(
           {// 연결 성공 시: CONNECT 프레임 전송 → 구독 재등록 → 콜백 호출
            [this](asio::io_service &ios)
            {
-               ioService = &ios; // ASIO 이벤트 루프 저장 (Post에 사용)
+               ioService = &ios;
 
                LOG("[SESSION] Connected -> Sending CONNECT frame");
-               core.Pub(BuildConnectFrame()); // STOMP CONNECT 프레임 전송
+               core.Pub(BuildConnectFrame());
 
-               ReRegisterSubscriptions(); // 재연결 시 구독 목록 복구
+               ReRegisterSubscriptions();
            },
            // 연결 끊김 시: ioService, stompReady 초기화
            [this]()
            {
                LOG("[SESSION] Disconnected");
                ioService = nullptr;
-               stompReady = false; // 재연결 전까지 큐 처리 중단
+               stompReady = false;
            },
            // 메시지 수신 시: 파싱 후 라우팅
            [this](const std::string &payload)
@@ -27,13 +28,11 @@ Session::Session()
 {
 }
 
-// 소멸자
 Session::~Session()
 {
-    Disconnect(); // 소멸 시 자동 연결 종료
+    Disconnect();
 }
 
-// URL 저장 및 Host 추출
 void Session::Init(const std::string &u)
 {
     url = u;
@@ -47,38 +46,55 @@ void Session::Init(const std::string &u)
     }
 }
 
-// 연결
 void Session::Connect()
 {
-    // 종료  요청 플래그
     stopRequested = false;
     LOG("[SESSION] connect -> " << url);
-    core.Start(url); // WebSocket 연결 시작 (별도 스레드)
+    core.Start(url);
 }
 
-// 연결 해제
 void Session::Disconnect()
 {
-    //
-    if (stopRequested.exchange(true)) // 이미 종료 요청된 경우 중복 실행 방지
+    if (stopRequested.exchange(true))
         return;
 
     LOG("[SESSION] disconnect");
-    core.End(); // WebSocket 연결 종료
+    core.End();
 }
 
-// 연결 여부 확인
 bool Session::IsConnected() const
 {
-    // core.IsConnected() : WebSocket 연결 여부
-    // stompReady : STOMP 서버에게 CONNECTED 응답을 받았는가?
-    return core.IsConnected() && stompReady; // WebSocket + STOMP 둘 다 준비된 경우만 true
+    return core.IsConnected() && stompReady;
 }
 
-// 프레임 만들어서 전송
-void Session::Publish(const std::string &destination, const std::string &body)
+void Session::Send(const std::string &destination, const std::string &body)
 {
-    core.Pub(BuildSendFrame(destination, body));
+    std::string json = "{\"payload\":\"" + body + "\"}";
+    if (!stompReady)
+    {
+        std::lock_guard<std::mutex> lock(pendingMutex);
+        pendingMessages.push_back({destination, json});
+        LOG("[SESSION] Send queued (not ready) -> " << destination);
+        return;
+    }
+    core.Pub(BuildSendFrame(destination, json));
+}
+
+void Session::SendRaw(const std::string &destination, const std::string &json)
+{
+    if (!stompReady)
+    {
+        std::lock_guard<std::mutex> lock(pendingMutex);
+        pendingMessages.push_back({destination, json});
+        LOG("[SESSION] SendRaw queued (not ready) -> " << destination);
+        return;
+    }
+    core.Pub(BuildSendFrame(destination, json));
+}
+
+void Session::Publish(Publisher *publisher)
+{
+    publisher->run();
 }
 
 void Session::Subscribe(const std::string &topic, Subscriber *subscriber)
@@ -86,19 +102,13 @@ void Session::Subscribe(const std::string &topic, Subscriber *subscriber)
     LOG("[SESSION] subscribe -> " << topic);
 
     {
-        // 재연결 시 재구독 때도 쓰기 때문에 subMutex Lock
         std::lock_guard<std::mutex> lock(subMutex);
-        subscriptions.push_back({topic, subscriber}); // 구독 목록에 추가
+        subscriptions.push_back({topic, subscriber});
     }
 
-    // 이미 연결 중이면 바로 SUBSCRIBE 프레임 전송
     if (IsConnected())
     {
-        // subId 생성
         std::string subId = "sub-" + std::to_string(subscriptions.size() - 1);
-
-        // ASIO 쓰레드에서 프레임 생성 후 core.Sub() 해서 서버에 전송
-        // 내부 큐에 작업 넣기
         Post([this, topic, subId]()
              { core.Sub(BuildSubscribeFrame(topic, subId)); });
     }
@@ -106,14 +116,13 @@ void Session::Subscribe(const std::string &topic, Subscriber *subscriber)
 
 void Session::Post(std::function<void()> task)
 {
-    if (!ioService) // 연결 끊긴 상태면 무시
+    if (!ioService)
         return;
-    ioService->post(task); // ASIO 이벤트 루프에 작업 등록
+    ioService->post(task);
 }
 
 void Session::ReRegisterSubscriptions()
 {
-    // 재연결 시 기존 구독 목록을 서버에 다시 등록
     std::lock_guard<std::mutex> lock(subMutex);
     for (size_t i = 0; i < subscriptions.size(); i++)
     {
@@ -128,40 +137,37 @@ void Session::ReRegisterSubscriptions()
 
 std::string Session::BuildConnectFrame() const
 {
-    // STOMP CONNECT 프레임 (heart-beat 비활성화)
     std::string frame =
         "CONNECT\n"
         "accept-version:1.1,1.2\n"
         "host:" +
         host + "\n"
                "heart-beat:0,0\n\n";
-    frame.push_back('\0'); // STOMP 프레임 종료 문자
+    frame.push_back('\0');
     return frame;
 }
 
 std::string Session::BuildSendFrame(const std::string &dest, const std::string &body) const
 {
-    // STOMP SEND 프레임
     std::string frame =
         "SEND\n"
         "destination:" +
         dest + "\n"
                "content-type:application/json\n\n" +
         body;
-    frame.push_back('\0'); // STOMP 프레임 종료 문자
+    frame.push_back('\0');
     return frame;
 }
 
 std::string Session::BuildSubscribeFrame(const std::string &topic, const std::string &id) const
 {
-    // STOMP SUBSCRIBE 프레임
     std::string frame =
         "SUBSCRIBE\n"
         "id:" +
         id + "\n"
              "destination:" +
         topic + "\n\n";
-    frame.push_back('\0'); // STOMP 프레임 종료 문자
+    frame.push_back('\0');
     return frame;
 }
 
@@ -174,26 +180,33 @@ void Session::ParseMessage(const std::string &payload)
     if (payload.empty())
         return;
 
-    // 첫 줄에서 프레임 타입 추출 (CONNECTED, MESSAGE 등)
     auto firstNewline = payload.find('\n');
     if (firstNewline == std::string::npos)
         return;
 
     std::string frameType = payload.substr(0, firstNewline);
 
-    // STOMP 연결 확인 응답 처리
     if (frameType == "CONNECTED")
     {
         LOG("[SESSION] STOMP CONNECTED received");
-        stompReady = true; // 이제부터 큐 처리 허용
+        stompReady = true;
+
+        std::vector<std::pair<std::string, std::string>> pending;
+        {
+            std::lock_guard<std::mutex> lock(pendingMutex);
+            pending = std::move(pendingMessages);
+        }
+        for (const auto &m : pending)
+        {
+            LOG("[SESSION] Flushing queued Send -> " << m.first);
+            core.Pub(BuildSendFrame(m.first, m.second));
+        }
         return;
     }
 
-    // MESSAGE 프레임만 처리
     if (frameType != "MESSAGE")
         return;
 
-    // 헤더에서 destination 추출
     std::string destination;
     auto destPos = payload.find("destination:");
     if (destPos != std::string::npos)
@@ -202,31 +215,28 @@ void Session::ParseMessage(const std::string &payload)
         destination = payload.substr(destPos + 12, destEnd - destPos - 12);
     }
 
-    // 빈 줄(\n\n) 이후가 body
     auto bodyPos = payload.find("\n\n");
     if (bodyPos == std::string::npos)
         return;
 
     std::string body = payload.substr(bodyPos + 2);
-    if (!body.empty() && body.back() == '\0') // 종료 문자 제거
+    if (!body.empty() && body.back() == '\0')
         body.pop_back();
 
     LOG("[SESSION] MESSAGE received -> " << destination);
 
-    // ASIO 스레드에서 라우팅 처리
     Post([this, destination, body]()
          { RouteMessage(destination, body); });
 }
 
 void Session::RouteMessage(const std::string &destination, const std::string &body)
 {
-    // destination과 일치하는 Subscriber 찾아서 콜백 호출
     std::lock_guard<std::mutex> lock(subMutex);
     for (const auto &s : subscriptions)
     {
         if (s.topic == destination && s.subscriber)
         {
-            s.subscriber->Received(body, *this);
+            s.subscriber->dispatch(body, *this);
             break;
         }
     }

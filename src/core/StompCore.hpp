@@ -3,6 +3,7 @@
 #define ASIO_STANDALONE         // ASIO를 단독으로 사용 (Boost 없이)
 #define _WEBSOCKETPP_CPP11_STL_ // websocketpp C++11 STL 사용 설정
 
+#include <websocketpp/config/asio_client.hpp>
 #include <websocketpp/config/asio_no_tls_client.hpp>
 #include <websocketpp/client.hpp>
 #include <string>
@@ -12,7 +13,9 @@
 #include <thread>
 
 // TLS 없는 WebSocket 클라이언트 타입 별칭
+// 일단 ws_client 위주로 만들고 ws_tls_client는 바꿀 수 있도록 대비만
 typedef websocketpp::client<websocketpp::config::asio_client> ws_client;
+// typedef websocketpp::client<websocketpp::config::asio_tls_client> ws_tls_client;
 
 // WebSocket + STOMP 연결의 핵심 로직을 담당하는 클래스
 // Session이 이 클래스를 소유하고 사용
@@ -46,7 +49,8 @@ private:
     std::string host;  // 호스트명
     Handlers handlers; // 이벤트 핸들러
 
-    ws_client *currentClient{nullptr};      // 현재 연결된 WebSocket 클라이언트 (null이면 미연결)
+    ws_client *currentClient{nullptr}; // 현재 연결된 WebSocket 클라이언트 (null이면 미연결)
+
     websocketpp::connection_hdl hdl;        // 현재 연결 핸들
     asio::io_service *ioService{nullptr};   // io_service 스레드에서 send()하기 위해 저장
     mutable std::mutex clientMutex;         // currentClient 접근 보호 뮤텍스

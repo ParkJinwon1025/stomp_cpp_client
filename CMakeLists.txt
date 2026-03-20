@@ -9,8 +9,16 @@ if(MSVC)
 endif()
 
 find_package(asio CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+
+set(OPENSSL_ROOT_DIR "C:/vcpkg/installed/x64-windows")
+set(OPENSSL_INCLUDE_DIR "C:/vcpkg/installed/x64-windows/include")
+set(OPENSSL_CRYPTO_LIBRARY "C:/vcpkg/installed/x64-windows/lib/libcrypto.lib")
+set(OPENSSL_SSL_LIBRARY "C:/vcpkg/installed/x64-windows/lib/libssl.lib")
+find_package(OpenSSL REQUIRED)
 
 include_directories(${CMAKE_SOURCE_DIR}/websocketpp)
+include_directories(${CMAKE_SOURCE_DIR}/websocketpp/config)
 include_directories(${CMAKE_SOURCE_DIR}/src/core)
 include_directories(${CMAKE_SOURCE_DIR}/src/interface)
 
@@ -19,12 +27,16 @@ add_executable(robot_stomp_client
     src/core/StompCore.cpp
     src/interface/Session.cpp
     src/interface/Publisher.cpp
+    src/interface/Subscriber.cpp
     src/interface/Reconnector.cpp
 )
 
 target_link_libraries(robot_stomp_client
     PRIVATE
     asio::asio
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    nlohmann_json::nlohmann_json
 )
 
 if(WIN32)
