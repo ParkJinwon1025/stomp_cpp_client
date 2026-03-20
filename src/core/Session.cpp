@@ -1,41 +1,11 @@
 #include "Session.hpp"
 #include "Publisher.hpp"
+#include <iostream>
 
-Session::Session()
-    : core(
-          {// 연결 성공 시: CONNECT 프레임 전송 → 구독 재등록 → 콜백 호출
-           [this](asio::io_service &ios)
-           {
-               ioService = &ios;
-
-               LOG("[SESSION] Connected -> Sending CONNECT frame");
-               core.Pub(BuildConnectFrame());
-
-               ReRegisterSubscriptions();
-           },
-           // 연결 끊김 시: ioService, stompReady 초기화
-           [this]()
-           {
-               LOG("[SESSION] Disconnected");
-               ioService = nullptr;
-               stompReady = false;
-           },
-           // 메시지 수신 시: 파싱 후 라우팅
-           [this](const std::string &payload)
-           {
-               ParseMessage(payload);
-           }})
-{
-}
-
-Session::~Session()
-{
-    Disconnect();
-}
-
-void Session::Init(const std::string &u)
+Session::Session(const std::string &u)
 {
     url = u;
+    uri = u;
 
     auto pos = url.find("://");
     if (pos != std::string::npos)
@@ -46,11 +16,20 @@ void Session::Init(const std::string &u)
     }
 }
 
+Session::~Session()
+{
+    Disconnect();
+}
+
 void Session::Connect()
 {
     stopRequested = false;
     LOG("[SESSION] connect -> " << url);
-    core.Start(url);
+
+    if (wsThread.joinable())
+        wsThread.join();
+
+    wsThread = std::thread([this]() { TryConnect(); });
 }
 
 void Session::Disconnect()
@@ -59,12 +38,99 @@ void Session::Disconnect()
         return;
 
     LOG("[SESSION] disconnect");
-    core.End();
+    {
+        std::lock_guard<std::mutex> lock(clientMutex);
+        if (currentClient)
+            currentClient->stop();
+    }
+
+    if (wsThread.joinable())
+        wsThread.detach();
 }
 
 bool Session::IsConnected() const
 {
-    return core.IsConnected() && stompReady;
+    std::lock_guard<std::mutex> lock(clientMutex);
+    return currentClient != nullptr && stompReady;
+}
+
+void Session::Pub(const std::string &rawFrame)
+{
+    std::lock_guard<std::mutex> lock(clientMutex);
+    if (!currentClient)
+        return;
+    websocketpp::lib::error_code ec;
+    currentClient->send(hdl, rawFrame, websocketpp::frame::opcode::text, ec);
+}
+
+void Session::Sub(const std::string &rawFrame)
+{
+    std::lock_guard<std::mutex> lock(clientMutex);
+    if (!currentClient)
+        return;
+    websocketpp::lib::error_code ec;
+    currentClient->send(hdl, rawFrame, websocketpp::frame::opcode::text, ec);
+}
+
+void Session::TryConnect()
+{
+    ws_client c;
+    c.clear_access_channels(websocketpp::log::alevel::all);
+    c.clear_error_channels(websocketpp::log::elevel::all);
+    c.init_asio();
+
+    c.set_open_handler([this, &c](websocketpp::connection_hdl h)
+                       {
+        {
+            std::lock_guard<std::mutex> lock(clientMutex);
+            hdl = h;
+            currentClient = &c;
+            ioService = &c.get_io_service();
+        }
+        LOG("[SESSION] Connected -> Sending CONNECT frame");
+        Pub(BuildConnectFrame());
+        ReRegisterSubscriptions(); });
+
+    c.set_message_handler([this](websocketpp::connection_hdl, ws_client::message_ptr msg)
+                          {
+        LOG("[CORE] raw received -> '" << msg->get_payload() << "'");
+        ParseMessage(msg->get_payload()); });
+
+    c.set_close_handler([this](websocketpp::connection_hdl)
+                        {
+        {
+            std::lock_guard<std::mutex> lock(clientMutex);
+            currentClient = nullptr;
+            ioService = nullptr;
+        }
+        LOG("[SESSION] Disconnected");
+        stompReady = false; });
+
+    c.set_fail_handler([this](websocketpp::connection_hdl)
+                       {
+        {
+            std::lock_guard<std::mutex> lock(clientMutex);
+            currentClient = nullptr;
+            ioService = nullptr;
+        }
+        LOG("[SESSION] Disconnected");
+        stompReady = false; });
+
+    websocketpp::lib::error_code ec;
+    auto con = c.get_connection(uri, ec);
+    if (ec)
+    {
+        stompReady = false;
+        return;
+    }
+
+    c.connect(con);
+    c.run();
+
+    {
+        std::lock_guard<std::mutex> lock(clientMutex);
+        currentClient = nullptr;
+    }
 }
 
 void Session::Send(const std::string &destination, const std::string &body)
@@ -77,30 +143,17 @@ void Session::Send(const std::string &destination, const std::string &body)
         LOG("[SESSION] Send queued (not ready) -> " << destination);
         return;
     }
-    core.Pub(BuildSendFrame(destination, json));
-}
-
-void Session::SendRaw(const std::string &destination, const std::string &json)
-{
-    if (!stompReady)
-    {
-        std::lock_guard<std::mutex> lock(pendingMutex);
-        pendingMessages.push_back({destination, json});
-        LOG("[SESSION] SendRaw queued (not ready) -> " << destination);
-        return;
-    }
-    core.Pub(BuildSendFrame(destination, json));
+    Pub(BuildSendFrame(destination, json));
 }
 
 void Session::Publish(Publisher *publisher)
 {
-    publisher->run();
+    publisher->HandleStarted(*this);
 }
 
 void Session::Subscribe(const std::string &topic, Subscriber *subscriber)
 {
     LOG("[SESSION] subscribe -> " << topic);
-
     {
         std::lock_guard<std::mutex> lock(subMutex);
         subscriptions.push_back({topic, subscriber});
@@ -109,8 +162,7 @@ void Session::Subscribe(const std::string &topic, Subscriber *subscriber)
     if (IsConnected())
     {
         std::string subId = "sub-" + std::to_string(subscriptions.size() - 1);
-        Post([this, topic, subId]()
-             { core.Sub(BuildSubscribeFrame(topic, subId)); });
+        Sub(BuildSubscribeFrame(topic, subId));
     }
 }
 
@@ -127,13 +179,9 @@ void Session::ReRegisterSubscriptions()
     for (size_t i = 0; i < subscriptions.size(); i++)
     {
         LOG("[SESSION] Re-subscribing -> " << subscriptions[i].topic);
-        core.Sub(BuildSubscribeFrame(subscriptions[i].topic, "sub-" + std::to_string(i)));
+        Sub(BuildSubscribeFrame(subscriptions[i].topic, "sub-" + std::to_string(i)));
     }
 }
-
-// ========================
-// 프레임 빌드
-// ========================
 
 std::string Session::BuildConnectFrame() const
 {
@@ -171,10 +219,6 @@ std::string Session::BuildSubscribeFrame(const std::string &topic, const std::st
     return frame;
 }
 
-// ========================
-// 수신 처리
-// ========================
-
 void Session::ParseMessage(const std::string &payload)
 {
     if (payload.empty())
@@ -199,7 +243,7 @@ void Session::ParseMessage(const std::string &payload)
         for (const auto &m : pending)
         {
             LOG("[SESSION] Flushing queued Send -> " << m.first);
-            core.Pub(BuildSendFrame(m.first, m.second));
+            Pub(BuildSendFrame(m.first, m.second));
         }
         return;
     }

@@ -5,10 +5,7 @@ class Session;
 class Publisher
 {
 public:
-    Publisher(Session &session);
-    virtual void run();
+    Publisher() = default;
+    virtual void HandleStarted(Session &session);
     virtual ~Publisher() = default;
-
-protected:
-    Session &session;
 };
