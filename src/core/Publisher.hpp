@@ -6,6 +6,6 @@ class Publisher
 {
 public:
     Publisher() = default;
-    virtual void HandleStarted(Session &session);
-    virtual ~Publisher() = default;
+    void HandleStarted(Session &session);
+    ~Publisher() = default;
 };
