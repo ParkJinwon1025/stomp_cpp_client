@@ -20,14 +20,14 @@ find_package(OpenSSL REQUIRED)
 include_directories(${CMAKE_SOURCE_DIR}/websocketpp)
 include_directories(${CMAKE_SOURCE_DIR}/websocketpp/config)
 include_directories(${CMAKE_SOURCE_DIR}/src/core)
-include_directories(${CMAKE_SOURCE_DIR}/src/Publisher2)
+include_directories(${CMAKE_SOURCE_DIR}/src/Publisher3)
 
 add_executable(robot_stomp_client
     src/main.cpp
     src/core/Session.cpp
     src/core/Subscriber.cpp
     src/core/Reconnector.cpp
-    src/Publisher2/Publisher.cpp
+    src/Publisher3/Publisher.cpp
 )
 
 target_link_libraries(robot_stomp_client

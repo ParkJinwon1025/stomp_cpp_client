@@ -1,7 +1,13 @@
 #include "Session.hpp"
 #include "Publisher.hpp"
 #include <iostream>
+#include <algorithm>
 
+// =============================================
+// Public
+// =============================================
+
+// 생성자 — URL 파싱 및 host 추출
 Session::Session(const std::string &u)
 {
     url = u;
@@ -16,14 +22,17 @@ Session::Session(const std::string &u)
     }
 }
 
+// 소멸자 — 연결 종료
 Session::~Session()
 {
     Disconnect();
 }
 
+// WebSocket 연결 시작 + 워커 스레드 시작
 void Session::Connect()
 {
     stopRequested = false;
+    queueStop = false;
     LOG("[SESSION] connect -> " << url);
 
     if (wsThread.joinable())
@@ -31,8 +40,32 @@ void Session::Connect()
 
     wsThread = std::thread([this]()
                            { TryConnect(); });
+
+    // 워커 스레드 — 연결 상태일 때 큐에서 꺼내서 전송
+    queueWorker = std::thread([this]()
+    {
+        while (!queueStop)
+        {
+            if (stompReady)
+            {
+                std::string frame;
+                {
+                    std::lock_guard<std::mutex> lock(queueMutex);
+                    if (!outQueue.empty())
+                    {
+                        frame = outQueue.front();
+                        outQueue.pop_front();
+                    }
+                }
+                if (!frame.empty())
+                    Pub(frame);
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    });
 }
 
+// 연결 종료 + 워커 스레드 정지
 void Session::Disconnect()
 {
     if (stopRequested.exchange(true))
@@ -45,16 +78,68 @@ void Session::Disconnect()
             currentClient->stop();
     }
 
+    queueStop = true;
+    if (queueWorker.joinable())
+        queueWorker.join();
+
     if (wsThread.joinable())
         wsThread.detach();
 }
 
+// 현재 STOMP 연결 상태 반환
 bool Session::IsConnected() const
 {
     std::lock_guard<std::mutex> lock(clientMutex);
     return currentClient != nullptr && stompReady;
 }
 
+// JSON 오브젝트를 문자열로 변환 후 큐에 push
+void Session::Send(const std::string &destination, const nlohmann::json &j)
+{
+    // j.dump() : nlohmann 객체를 문자열로 변환
+    SendRaw(destination, j.dump());
+}
+
+// Publisher의 HandleStarted 호출
+void Session::Publish(Publisher *publisher)
+{
+    publisher->HandleStarted(*this);
+}
+
+// 구독 목록에 추가 + 구독 프레임 큐에 push
+void Session::Subscribe(const std::string &topic, Subscriber *subscriber)
+{
+    LOG("[SESSION] subscribe -> " << topic);
+    size_t subId;
+    {
+        std::lock_guard<std::mutex> lock(subMutex);
+        subscriptions.push_back({topic, subscriber});
+        subId = subscriptions.size() - 1;
+    }
+
+    // 무조건 큐에 push
+    std::lock_guard<std::mutex> lock(queueMutex);
+    outQueue.push_back(BuildSubscribeFrame(topic, "sub-" + std::to_string(subId)));
+}
+
+// =============================================
+// Private
+// =============================================
+
+// 전송 프레임 생성 후 큐에 push (미연결 시 버림)
+void Session::SendRaw(const std::string &destination, const std::string &body)
+{
+    if (!stompReady)
+    {
+        LOG("[SESSION] Not connected — message dropped");
+        return;
+    }
+    std::lock_guard<std::mutex> lock(queueMutex);
+    outQueue.push_back(BuildSendFrame(destination, body));
+    LOG("[SESSION] Send enqueued -> " << destination);
+}
+
+// WebSocket으로 실제 전송
 void Session::Pub(const std::string &rawFrame)
 {
     std::lock_guard<std::mutex> lock(clientMutex);
@@ -64,6 +149,7 @@ void Session::Pub(const std::string &rawFrame)
     currentClient->send(hdl, rawFrame, websocketpp::frame::opcode::text, ec);
 }
 
+// WebSocket으로 실제 전송 (구독용)
 void Session::Sub(const std::string &rawFrame)
 {
     std::lock_guard<std::mutex> lock(clientMutex);
@@ -73,6 +159,38 @@ void Session::Sub(const std::string &rawFrame)
     currentClient->send(hdl, rawFrame, websocketpp::frame::opcode::text, ec);
 }
 
+// io_service에 작업 등록
+void Session::Post(std::function<void()> task)
+{
+    if (!ioService)
+        return;
+    ioService->post(task);
+}
+
+// 재연결 시 구독 목록의 모든 구독을 큐에 다시 push (중복 방지: 기존 구독 프레임 먼저 제거)
+void Session::ReRegisterSubscriptions()
+{
+    std::lock_guard<std::mutex> lock(subMutex);
+
+    // 큐에서 구독 프레임만 제거
+    {
+        std::lock_guard<std::mutex> qLock(queueMutex);
+        outQueue.erase(
+            std::remove_if(outQueue.begin(), outQueue.end(),
+                [](const std::string &frame) { return frame.rfind("SUBSCRIBE", 0) == 0; }),
+            outQueue.end());
+    }
+
+    // 구독 목록 다시 push
+    for (size_t i = 0; i < subscriptions.size(); i++)
+    {
+        LOG("[SESSION] Re-subscribing -> " << subscriptions[i].topic);
+        std::lock_guard<std::mutex> qLock(queueMutex);
+        outQueue.push_back(BuildSubscribeFrame(subscriptions[i].topic, "sub-" + std::to_string(i)));
+    }
+}
+
+// WebSocket 연결 시도 및 핸들러 등록
 void Session::TryConnect()
 {
     ws_client c;
@@ -134,56 +252,7 @@ void Session::TryConnect()
     }
 }
 
-void Session::Send(const std::string &destination, const std::string &body)
-{
-    // STOMP에 연결이 되지 않은 상태이면 대기 큐에 저장
-    if (!stompReady)
-    {
-        std::lock_guard<std::mutex> lock(pendingMutex);
-        pendingMessages.push_back({destination, body});
-        LOG("[SESSION] Send queued (not ready) -> " << destination);
-        return;
-    }
-    Pub(BuildSendFrame(destination, body));
-}
-
-void Session::Publish(Publisher *publisher)
-{
-    publisher->HandleStarted(*this);
-}
-
-void Session::Subscribe(const std::string &topic, Subscriber *subscriber)
-{
-    LOG("[SESSION] subscribe -> " << topic);
-    {
-        std::lock_guard<std::mutex> lock(subMutex);
-        subscriptions.push_back({topic, subscriber});
-    }
-
-    if (IsConnected())
-    {
-        std::string subId = "sub-" + std::to_string(subscriptions.size() - 1);
-        Sub(BuildSubscribeFrame(topic, subId));
-    }
-}
-
-void Session::Post(std::function<void()> task)
-{
-    if (!ioService)
-        return;
-    ioService->post(task);
-}
-
-void Session::ReRegisterSubscriptions()
-{
-    std::lock_guard<std::mutex> lock(subMutex);
-    for (size_t i = 0; i < subscriptions.size(); i++)
-    {
-        LOG("[SESSION] Re-subscribing -> " << subscriptions[i].topic);
-        Sub(BuildSubscribeFrame(subscriptions[i].topic, "sub-" + std::to_string(i)));
-    }
-}
-
+// STOMP CONNECT 프레임 생성
 std::string Session::BuildConnectFrame() const
 {
     std::string frame =
@@ -196,6 +265,7 @@ std::string Session::BuildConnectFrame() const
     return frame;
 }
 
+// STOMP SEND 프레임 생성
 std::string Session::BuildSendFrame(const std::string &dest, const std::string &body) const
 {
     std::string frame =
@@ -208,6 +278,7 @@ std::string Session::BuildSendFrame(const std::string &dest, const std::string &
     return frame;
 }
 
+// STOMP SUBSCRIBE 프레임 생성
 std::string Session::BuildSubscribeFrame(const std::string &topic, const std::string &id) const
 {
     std::string frame =
@@ -220,6 +291,7 @@ std::string Session::BuildSubscribeFrame(const std::string &topic, const std::st
     return frame;
 }
 
+// 수신된 STOMP 프레임 파싱
 void Session::ParseMessage(const std::string &payload)
 {
     if (payload.empty())
@@ -235,17 +307,6 @@ void Session::ParseMessage(const std::string &payload)
     {
         LOG("[SESSION] STOMP CONNECTED received");
         stompReady = true;
-
-        std::vector<std::pair<std::string, std::string>> pending;
-        {
-            std::lock_guard<std::mutex> lock(pendingMutex);
-            pending = std::move(pendingMessages);
-        }
-        for (const auto &m : pending)
-        {
-            LOG("[SESSION] Flushing queued Send -> " << m.first);
-            Pub(BuildSendFrame(m.first, m.second));
-        }
         return;
     }
 
@@ -274,6 +335,7 @@ void Session::ParseMessage(const std::string &payload)
          { RouteMessage(destination, body); });
 }
 
+// destination에 맞는 Subscriber에게 메시지 전달
 void Session::RouteMessage(const std::string &destination, const std::string &body)
 {
     std::lock_guard<std::mutex> lock(subMutex);

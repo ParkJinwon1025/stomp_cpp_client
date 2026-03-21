@@ -15,7 +15,10 @@
 #include <string>
 #include <iostream>
 #include <thread>
+#include <deque>
 
+// ws:// (TLS 없음) : websocketpp::config::asio_client   → asio_client.hpp 내부 struct 이름이 asio_client라 이걸 사용
+// wss:// (TLS 있음) : websocketpp::config::asio_tls_client → OpenSSL 필요, asio_tls_client.hpp include 필요
 typedef websocketpp::client<websocketpp::config::asio_client> ws_client;
 
 // 멀티스레드 환경에서 안전하게 콘솔 출력하기 위한 뮤텍스
@@ -41,20 +44,17 @@ public:
     void Disconnect();
     bool IsConnected() const;
 
-    void Send(const std::string &destination, const std::string &body); // 문자열 → {"payload":"..."} 래핑
+    // Send Version 2
+    // 1안 : JSON 오브젝트를 매개변수로 받기
+    void Send(const std::string &destination, const nlohmann::json &j);
 
+    // 2안 : 구조체(Struct)를 매개변수로 받기
+    // // NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE 매크로가 정의된 struct만 사용 가능
     template <typename T>
     void Send(const std::string &destination, const T &data)
     {
         nlohmann::json j = data;
-        std::string json = j.dump();
-        if (!stompReady)
-        {
-            std::lock_guard<std::mutex> lock(pendingMutex);
-            pendingMessages.push_back({destination, json});
-            return;
-        }
-        Pub(BuildSendFrame(destination, json));
+        SendRaw(destination, j.dump());
     }
 
     void Publish(Publisher *publisher);
@@ -83,9 +83,13 @@ private:
     std::vector<Subscription> subscriptions;
     std::mutex subMutex;
 
-    std::vector<std::pair<std::string, std::string>> pendingMessages;
-    std::mutex pendingMutex;
+    // 발신 큐 — Pub/Sub 무조건 여기 거침
+    std::deque<std::string> outQueue;
+    std::mutex queueMutex;
+    std::thread queueWorker;
+    std::atomic<bool> queueStop{false};
 
+    void SendRaw(const std::string &destination, const std::string &body); // 문자열 → 전송 (내부용)
     void TryConnect();
     void Pub(const std::string &rawFrame);
     void Sub(const std::string &rawFrame);
