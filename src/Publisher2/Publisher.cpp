@@ -4,11 +4,13 @@
 #include <chrono>
 #include <string>
 
+// 스레드 실행 (detach)
 void Publisher::HandleStarted(Session &session)
 {
     Run(session).detach();
 }
 
+// 스레드 정의 — 사용자가 직접 로직을 구현하고 반환
 std::thread Publisher::Run(Session &session)
 {
     return std::thread([&session]()
