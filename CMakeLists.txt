@@ -11,10 +11,8 @@ endif()
 find_package(asio CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
-set(OPENSSL_ROOT_DIR "C:/vcpkg/installed/x64-windows")
-set(OPENSSL_INCLUDE_DIR "C:/vcpkg/installed/x64-windows/include")
-set(OPENSSL_CRYPTO_LIBRARY "C:/vcpkg/installed/x64-windows/lib/libcrypto.lib")
-set(OPENSSL_SSL_LIBRARY "C:/vcpkg/installed/x64-windows/lib/libssl.lib")
+set(VCPKG_ROOT "C:/vcpkg" CACHE PATH "Path to vcpkg installation")
+set(OPENSSL_ROOT_DIR "${VCPKG_ROOT}/installed/x64-windows")
 find_package(OpenSSL REQUIRED)
 
 include_directories(${CMAKE_SOURCE_DIR}/websocketpp)
