@@ -1,4 +1,5 @@
 #pragma once
+#include <thread>
 
 class Session;
 
@@ -8,4 +9,7 @@ public:
     Publisher() = default;
     void HandleStarted(Session &session);
     ~Publisher() = default;
+
+private:
+    std::thread Run(Session &session);
 };

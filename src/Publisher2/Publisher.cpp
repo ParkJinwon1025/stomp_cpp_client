@@ -6,7 +6,12 @@
 
 void Publisher::HandleStarted(Session &session)
 {
-    std::thread([&session]()
+    Run(session).detach();
+}
+
+std::thread Publisher::Run(Session &session)
+{
+    return std::thread([&session]()
     {
         while (true)
         {
@@ -17,5 +22,5 @@ void Publisher::HandleStarted(Session &session)
 
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
-    }).detach();
+    });
 }
