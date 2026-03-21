@@ -89,6 +89,7 @@ private:
     std::thread queueWorker;
     std::atomic<bool> queueStop{false};
 
+    // Send Version 1
     void SendRaw(const std::string &destination, const std::string &body); // 문자열 → 전송 (내부용)
     void TryConnect();
     void Pub(const std::string &rawFrame);
