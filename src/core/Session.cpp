@@ -94,6 +94,30 @@ void Session::Send(const std::string &destination, const std::string body)
     Pub(frame);
 }
 
+// ──2.  BuildSendFrame ───────────────────────────
+// 메시지를 보낼 때마다 사용
+std::string Session::BuildSendFrame(const std::string &dest, const std::string &body) const
+{
+    LOG("[SESSION] BuildSendFrame -> " << dest);
+    std::string frame =
+        "SEND\n"
+        "destination:" +
+        dest + "\n"
+               "content-type:application/json\n\n" +
+        body;
+    frame.push_back('\0');
+    return frame;
+}
+
+// ──3.  Pub ──────────────────────────────────────
+void Session::Pub(const std::string &rawFrame)
+{
+    LOG("[SESSION] Pub -> sending frame");
+    std::lock_guard<std::mutex> lock(clientMutex);
+    websocketpp::lib::error_code ec;
+    currentClient->send(hdl, rawFrame, websocketpp::frame::opcode::text, ec);
+}
+
 // ── 2. Send (json) ──────────────────────────────
 void Session::Send(const std::string &destination, const nlohmann::json &j)
 {
@@ -119,15 +143,6 @@ void Session::Send(const std::string &destination, const nlohmann::json &j)
 // =============================================
 // Private
 // =============================================
-
-// ── Pub ──────────────────────────────────────
-void Session::Pub(const std::string &rawFrame)
-{
-    LOG("[SESSION] Pub -> sending frame");
-    std::lock_guard<std::mutex> lock(clientMutex);
-    websocketpp::lib::error_code ec;
-    currentClient->send(hdl, rawFrame, websocketpp::frame::opcode::text, ec);
-}
 
 // ── Sub ──────────────────────────────────────
 // void Session::Sub(const std::string &rawFrame)
@@ -235,21 +250,6 @@ std::string Session::BuildConnectFrame() const
         "host:" +
         host + "\n"
                "heart-beat:0,0\n\n";
-    frame.push_back('\0');
-    return frame;
-}
-
-// ── BuildSendFrame ───────────────────────────
-// 메시지를 보낼 때마다 사용
-std::string Session::BuildSendFrame(const std::string &dest, const std::string &body) const
-{
-    LOG("[SESSION] BuildSendFrame -> " << dest);
-    std::string frame =
-        "SEND\n"
-        "destination:" +
-        dest + "\n"
-               "content-type:application/json\n\n" +
-        body;
     frame.push_back('\0');
     return frame;
 }
