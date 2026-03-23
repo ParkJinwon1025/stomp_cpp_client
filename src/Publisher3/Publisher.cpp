@@ -13,6 +13,7 @@ void Publisher::HandleStarted(Session &session)
 // 스레드 정의 — 사용자가 직접 로직을 구현하고 반환
 std::thread Publisher::Run(Session &session)
 {
+    // [&session] : 바깥에 있는 session 변수를 참조로 가져와서 람다 안에서 쓰겠다라는 의미
     return std::thread([&session]()
                        {
         while (true)
