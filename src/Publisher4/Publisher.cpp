@@ -33,8 +33,6 @@ std::thread Publisher::Run(Session &session)
 
             // type: "report", timestamp : ms로 초기화
             TimestampData data{ "report", ms };
-            nlohmann::json j = data; // struct → json 변환
-            LOG("[PUBLISHER4] struct -> json -> " << j.dump());
             session.Send("/app/ubisam", data);
 
             std::this_thread::sleep_for(std::chrono::seconds(1));

@@ -11,11 +11,9 @@
 #include <mutex>
 #include <atomic>
 #include <vector>
-#include <functional>
 #include <string>
 #include <iostream>
 #include <thread>
-#include <deque>
 
 // ws:// (TLS 없음) : websocketpp::config::asio_client   → asio_client.hpp 내부 struct 이름이 asio_client라 이걸 사용
 // wss:// (TLS 있음) : websocketpp::config::asio_tls_client → OpenSSL 필요, asio_tls_client.hpp include 필요
@@ -45,24 +43,22 @@ public:
     bool IsConnected() const;
 
     // 1. 문자열로 Send
-    void Send(const std::string &destination, const string body);
+    void Send(const std::string &destination, const std::string body);
 
     // 2. json 객체로 Send
     void Send(const std::string &destination, const nlohmann::json &j);
 
-    // // NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE 매크로가 정의된 struct만 사용 가능
-    // T 자리에 어떤 타입이든 올 수 있는 함수
-    // 호출할 때 넘기는 타입에 따라 자동으로 맞는 함수 생성
-    // 3. 구조체 Send
+    // 3. 구조체로 Send
     template <typename T>
     void Send(const std::string &destination, const T &data)
     {
         nlohmann::json j = data;
-        SendRaw(destination, j.dump());
+        Send(destination, j);
     }
 
     void Publish(Publisher *publisher);
-    void Subscribe(const std::string &topic, Subscriber *subscriber);
+
+    // void Subscribe(const std::string &topic, Subscriber *subscriber);
 
 private:
     // WebSocket
@@ -79,31 +75,20 @@ private:
     std::atomic<bool> stopRequested{false};
     std::atomic<bool> stompReady{false};
 
-    struct Subscription
-    {
-        std::string topic;
-        Subscriber *subscriber;
-    };
-    std::vector<Subscription> subscriptions;
-    std::mutex subMutex;
+    // struct Subscription
+    // {
+    //     std::string topic;
+    //     Subscriber *subscriber;
+    // };
+    // std::vector<Subscription> subscriptions;
+    // std::mutex subMutex;
 
-    // 발신 큐 — Pub/Sub 무조건 여기 거침
-    std::deque<std::string> outQueue;
-    std::mutex queueMutex;
-    std::thread queueWorker;
-    std::atomic<bool> queueStop{false};
-
-    // Send Version 1
-    void SendRaw(const std::string &destination, const std::string &body); // 문자열 → 전송 (내부용)
     void TryConnect();
     void Pub(const std::string &rawFrame);
-    void Sub(const std::string &rawFrame);
-    void Post(std::function<void()> task);
-    void ReRegisterSubscriptions();
+    // void Sub(const std::string &rawFrame);
+    // void ReRegisterSubscriptions();
 
     std::string BuildConnectFrame() const;
     std::string BuildSendFrame(const std::string &dest, const std::string &body) const;
-    std::string BuildSubscribeFrame(const std::string &topic, const std::string &id) const;
-    void ParseMessage(const std::string &payload);
-    void RouteMessage(const std::string &destination, const std::string &body);
+    // std::string BuildSubscribeFrame(const std::string &topic, const std::string &id) const;
 };

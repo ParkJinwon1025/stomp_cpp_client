@@ -7,9 +7,11 @@
 // Public
 // =============================================
 
-// 생성자 — URL 파싱 및 host 추출
+// ── 생성자 ───────────────────────────────────
 Session::Session(const std::string &u)
 {
+
+    // URL에서 host 파싱
     url = u;
     uri = u;
 
@@ -18,203 +20,171 @@ Session::Session(const std::string &u)
     {
         pos += 3;
         auto end = url.find_first_of(":/", pos);
-        host = url.substr(pos, end - pos);
+        host = url.substr(pos, end - pos); // CONNECT 프레임의 헤더에 사용
     }
 }
 
-// 소멸자 — 연결 종료
+// ── 소멸자 ───────────────────────────────────
 Session::~Session()
 {
     Disconnect();
 }
 
-// WebSocket 연결 시작 + 워커 스레드 시작
+// ── Connect ──────────────────────────────────
 void Session::Connect()
 {
+    // 종료 요청 플래그 초기화
     stopRequested = false;
-    queueStop = false;
     LOG("[SESSION] connect -> " << url);
 
+    // 이전에 돌던 쓰레드가 있으면 완전히 끝날 때까지 기다림
     if (wsThread.joinable())
         wsThread.join();
 
+    // TryConnect를 백그라운드 쓰레드로 띄움
     wsThread = std::thread([this]()
                            { TryConnect(); });
-
-    // 워커 스레드 — 연결 상태일 때 큐에서 꺼내서 전송
-    queueWorker = std::thread([this]()
-    {
-        while (!queueStop)
-        {
-            if (stompReady)
-            {
-                std::string frame;
-                {
-                    std::lock_guard<std::mutex> lock(queueMutex);
-                    if (!outQueue.empty())
-                    {
-                        frame = outQueue.front();
-                        outQueue.pop_front();
-                    }
-                }
-                if (!frame.empty())
-                    Pub(frame);
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    });
 }
 
-// 연결 종료 + 워커 스레드 정지
+// ── Disconnect ───────────────────────────────
 void Session::Disconnect()
 {
+    // Disconnect 중복 실행 방지
     if (stopRequested.exchange(true))
         return;
 
     LOG("[SESSION] disconnect");
     {
+        // WebSocket 이벤트 루프(c.run()) 종료 요청
         std::lock_guard<std::mutex> lock(clientMutex);
         if (currentClient)
             currentClient->stop();
     }
 
-    queueStop = true;
-    if (queueWorker.joinable())
-        queueWorker.join();
-
+    // 쓰레드가 실행 중인지 확인
     if (wsThread.joinable())
+
+        // 쓰레드를 메인 쓰레드와 분리
         wsThread.detach();
 }
 
-// 현재 STOMP 연결 상태 반환
+// ── IsConnected ──────────────────────────────
 bool Session::IsConnected() const
 {
     std::lock_guard<std::mutex> lock(clientMutex);
     return currentClient != nullptr && stompReady;
 }
 
-// JSON 오브젝트를 문자열로 변환 후 큐에 push
-void Session::Send(const std::string &destination, const nlohmann::json &j)
-{
-    // j.dump() : nlohmann 객체를 문자열로 변환
-    SendRaw(destination, j.dump());
-}
-
-// Publisher의 HandleStarted 호출
+// ── Publish ──────────────────────────────────
 void Session::Publish(Publisher *publisher)
 {
     publisher->HandleStarted(*this);
 }
 
-// 구독 목록에 추가 + 구독 프레임 큐에 push
-void Session::Subscribe(const std::string &topic, Subscriber *subscriber)
+// ── 1. Send (string) ────────────────────────────
+void Session::Send(const std::string &destination, const std::string body)
 {
-    LOG("[SESSION] subscribe -> " << topic);
-    size_t subId;
+    LOG("[SESSION] Send(string) -> " << destination);
+    if (!IsConnected())
     {
-        std::lock_guard<std::mutex> lock(subMutex);
-        subscriptions.push_back({topic, subscriber});
-        subId = subscriptions.size() - 1;
+        LOG("[SESSION] Not connected — message dropped");
+        return;
     }
-
-    // 무조건 큐에 push
-    std::lock_guard<std::mutex> lock(queueMutex);
-    outQueue.push_back(BuildSubscribeFrame(topic, "sub-" + std::to_string(subId)));
+    std::string frame = BuildSendFrame(destination, body);
+    Pub(frame);
 }
+
+// ── 2. Send (json) ──────────────────────────────
+void Session::Send(const std::string &destination, const nlohmann::json &j)
+{
+    LOG("[SESSION] Send(json)   -> " << destination);
+    Send(destination, j.dump());
+}
+
+// ── 3. Send (struct) : hpp에 템플릿으로 구현 ────
+
+// ── Subscribe ────────────────────────────────
+// void Session::Subscribe(const std::string &topic, Subscriber *subscriber)
+// {
+//     LOG("[SESSION] subscribe -> " << topic);
+//     size_t subId;
+//     {
+//         std::lock_guard<std::mutex> lock(subMutex);
+//         subscriptions.push_back({topic, subscriber});
+//         subId = subscriptions.size() - 1;
+//     }
+//     Sub(BuildSubscribeFrame(topic, "sub-" + std::to_string(subId)));
+// }
 
 // =============================================
 // Private
 // =============================================
 
-// 전송 프레임 생성 후 큐에 push (미연결 시 버림)
-void Session::SendRaw(const std::string &destination, const std::string &body)
-{
-    if (!stompReady)
-    {
-        LOG("[SESSION] Not connected — message dropped");
-        return;
-    }
-    std::lock_guard<std::mutex> lock(queueMutex);
-    outQueue.push_back(BuildSendFrame(destination, body));
-    LOG("[SESSION] Send enqueued -> " << destination);
-}
-
-// WebSocket으로 실제 전송
+// ── Pub ──────────────────────────────────────
 void Session::Pub(const std::string &rawFrame)
 {
+    LOG("[SESSION] Pub -> sending frame");
     std::lock_guard<std::mutex> lock(clientMutex);
-    if (!currentClient)
-        return;
     websocketpp::lib::error_code ec;
     currentClient->send(hdl, rawFrame, websocketpp::frame::opcode::text, ec);
 }
 
-// WebSocket으로 실제 전송 (구독용)
-void Session::Sub(const std::string &rawFrame)
-{
-    std::lock_guard<std::mutex> lock(clientMutex);
-    if (!currentClient)
-        return;
-    websocketpp::lib::error_code ec;
-    currentClient->send(hdl, rawFrame, websocketpp::frame::opcode::text, ec);
-}
+// ── Sub ──────────────────────────────────────
+// void Session::Sub(const std::string &rawFrame)
+// {
+//     std::lock_guard<std::mutex> lock(clientMutex);
+//     if (!currentClient)
+//         return;
+//     websocketpp::lib::error_code ec;
+//     currentClient->send(hdl, rawFrame, websocketpp::frame::opcode::text, ec);
+// }
 
-// io_service에 작업 등록
-void Session::Post(std::function<void()> task)
-{
-    if (!ioService)
-        return;
-    ioService->post(task);
-}
+// ── ReRegisterSubscriptions ──────────────────
+// void Session::ReRegisterSubscriptions()
+// {
+//     std::lock_guard<std::mutex> lock(subMutex);
+//     for (size_t i = 0; i < subscriptions.size(); i++)
+//     {
+//         LOG("[SESSION] Re-subscribing -> " << subscriptions[i].topic);
+//         Sub(BuildSubscribeFrame(subscriptions[i].topic, "sub-" + std::to_string(i)));
+//     }
+// }
 
-// 재연결 시 구독 목록의 모든 구독을 큐에 다시 push (중복 방지: 기존 구독 프레임 먼저 제거)
-void Session::ReRegisterSubscriptions()
-{
-    std::lock_guard<std::mutex> lock(subMutex);
-
-    // 큐에서 구독 프레임만 제거
-    {
-        std::lock_guard<std::mutex> qLock(queueMutex);
-        outQueue.erase(
-            std::remove_if(outQueue.begin(), outQueue.end(),
-                [](const std::string &frame) { return frame.rfind("SUBSCRIBE", 0) == 0; }),
-            outQueue.end());
-    }
-
-    // 구독 목록 다시 push
-    for (size_t i = 0; i < subscriptions.size(); i++)
-    {
-        LOG("[SESSION] Re-subscribing -> " << subscriptions[i].topic);
-        std::lock_guard<std::mutex> qLock(queueMutex);
-        outQueue.push_back(BuildSubscribeFrame(subscriptions[i].topic, "sub-" + std::to_string(i)));
-    }
-}
-
-// WebSocket 연결 시도 및 핸들러 등록
+// ── TryConnect ───────────────────────────────
 void Session::TryConnect()
 {
+    // WebSocket 클라이언트 생성 및 로그 비활성화
     ws_client c;
     c.clear_access_channels(websocketpp::log::alevel::all);
     c.clear_error_channels(websocketpp::log::elevel::all);
     c.init_asio();
 
+    // 연결 성공 시 — 클라이언트 정보 저장 후 STOMP CONNECT 프레임 전송
     c.set_open_handler([this, &c](websocketpp::connection_hdl h)
                        {
-        {
-            std::lock_guard<std::mutex> lock(clientMutex);
-            hdl = h;
-            currentClient = &c;
-            ioService = &c.get_io_service();
-        }
-        LOG("[SESSION] Connected -> Sending CONNECT frame");
-        Pub(BuildConnectFrame());
-        ReRegisterSubscriptions(); });
+                           {
+                               std::lock_guard<std::mutex> lock(clientMutex);
+                               hdl = h;
+                               currentClient = &c;
+                               ioService = &c.get_io_service();
+                           }
+                           LOG("[SESSION] Connected -> Sending CONNECT frame");
+                           Pub(BuildConnectFrame());
+                           // ReRegisterSubscriptions();
+                       });
 
+    // 메시지 수신 시 — STOMP CONNECTED 프레임이면 stompReady = true
     c.set_message_handler([this](websocketpp::connection_hdl, ws_client::message_ptr msg)
                           {
-        LOG("[CORE] raw received -> '" << msg->get_payload() << "'");
-        ParseMessage(msg->get_payload()); });
+        const std::string &payload = msg->get_payload();
+        LOG("[CORE] raw received -> '" << payload << "'");
+        if (payload.rfind("CONNECTED", 0) == 0)
+        {
+            LOG("[SESSION] STOMP CONNECTED received");
+            stompReady = true;
+        } });
 
+    // 연결 종료 시 — 클라이언트 정보 초기화
     c.set_close_handler([this](websocketpp::connection_hdl)
                         {
         {
@@ -225,6 +195,7 @@ void Session::TryConnect()
         LOG("[SESSION] Disconnected");
         stompReady = false; });
 
+    // 연결 실패 시 — 클라이언트 정보 초기화
     c.set_fail_handler([this](websocketpp::connection_hdl)
                        {
         {
@@ -235,6 +206,7 @@ void Session::TryConnect()
         LOG("[SESSION] Disconnected");
         stompReady = false; });
 
+    // 서버 연결 시도
     websocketpp::lib::error_code ec;
     auto con = c.get_connection(uri, ec);
     if (ec)
@@ -244,15 +216,17 @@ void Session::TryConnect()
     }
 
     c.connect(con);
-    c.run();
+    c.run(); // 블로킹 — 연결이 끊길 때까지 이벤트 루프 실행
 
+    // 루프 종료 후 클라이언트 정보 초기화
     {
         std::lock_guard<std::mutex> lock(clientMutex);
         currentClient = nullptr;
     }
 }
 
-// STOMP CONNECT 프레임 생성
+// ── BuildConnectFrame ────────────────────────
+// 서버 연결 처음할 때 보내는 핸드셰이크
 std::string Session::BuildConnectFrame() const
 {
     std::string frame =
@@ -265,9 +239,11 @@ std::string Session::BuildConnectFrame() const
     return frame;
 }
 
-// STOMP SEND 프레임 생성
+// ── BuildSendFrame ───────────────────────────
+// 메시지를 보낼 때마다 사용
 std::string Session::BuildSendFrame(const std::string &dest, const std::string &body) const
 {
+    LOG("[SESSION] BuildSendFrame -> " << dest);
     std::string frame =
         "SEND\n"
         "destination:" +
@@ -278,73 +254,15 @@ std::string Session::BuildSendFrame(const std::string &dest, const std::string &
     return frame;
 }
 
-// STOMP SUBSCRIBE 프레임 생성
-std::string Session::BuildSubscribeFrame(const std::string &topic, const std::string &id) const
-{
-    std::string frame =
-        "SUBSCRIBE\n"
-        "id:" +
-        id + "\n"
-             "destination:" +
-        topic + "\n\n";
-    frame.push_back('\0');
-    return frame;
-}
-
-// 수신된 STOMP 프레임 파싱
-void Session::ParseMessage(const std::string &payload)
-{
-    if (payload.empty())
-        return;
-
-    auto firstNewline = payload.find('\n');
-    if (firstNewline == std::string::npos)
-        return;
-
-    std::string frameType = payload.substr(0, firstNewline);
-
-    if (frameType == "CONNECTED")
-    {
-        LOG("[SESSION] STOMP CONNECTED received");
-        stompReady = true;
-        return;
-    }
-
-    if (frameType != "MESSAGE")
-        return;
-
-    std::string destination;
-    auto destPos = payload.find("destination:");
-    if (destPos != std::string::npos)
-    {
-        auto destEnd = payload.find('\n', destPos);
-        destination = payload.substr(destPos + 12, destEnd - destPos - 12);
-    }
-
-    auto bodyPos = payload.find("\n\n");
-    if (bodyPos == std::string::npos)
-        return;
-
-    std::string body = payload.substr(bodyPos + 2);
-    if (!body.empty() && body.back() == '\0')
-        body.pop_back();
-
-    LOG("[SESSION] MESSAGE received -> " << destination);
-
-    Post([this, destination, body]()
-         { RouteMessage(destination, body); });
-}
-
-// destination에 맞는 Subscriber에게 메시지 전달
-void Session::RouteMessage(const std::string &destination, const std::string &body)
-{
-    std::lock_guard<std::mutex> lock(subMutex);
-    for (const auto &s : subscriptions)
-    {
-        if (s.topic == destination && s.subscriber)
-        {
-            s.subscriber->dispatch(body, *this);
-            break;
-        }
-    }
-}
+// ── BuildSubscribeFrame ──────────────────────
+// std::string Session::BuildSubscribeFrame(const std::string &topic, const std::string &id) const
+// {
+//     std::string frame =
+//         "SUBSCRIBE\n"
+//         "id:" +
+//         id + "\n"
+//              "destination:" +
+//         topic + "\n\n";
+//     frame.push_back('\0');
+//     return frame;
+// }
