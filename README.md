@@ -37,6 +37,20 @@ C:/vcpkg/vcpkg.exe install nlohmann-json:x64-windows
 C:/vcpkg/vcpkg.exe install openssl:x64-windows
 ```
 
+### 5. websocketpp 설치
+
+1. [websocketpp GitHub](https://github.com/zaphoyd/websocketpp)에서 **Code → Download ZIP** 클릭
+2. 압축 해제 후 폴더 이름을 `websocketpp`로 변경
+3. 프로젝트 루트에 붙여넣기
+
+```
+stomp_cpp_client/
+├── websocketpp/   ← 여기에 넣기
+├── src/
+├── CMakeLists.txt
+...
+```
+
 ## 빌드
 
 ```bash

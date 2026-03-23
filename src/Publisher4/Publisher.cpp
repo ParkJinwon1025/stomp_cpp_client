@@ -10,6 +10,8 @@ struct TimestampData
     std::string type;
     long long timestamp;
 };
+// struct → json 자동 변환 등록 (이 매크로 없으면 nlohmann::json j = data 에서 컴파일 에러)
+// JSON 변환 struct 및 필드 명시
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(TimestampData, type, timestamp)
 
 // 스레드 실행 (detach)
