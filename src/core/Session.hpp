@@ -44,12 +44,16 @@ public:
     void Disconnect();
     bool IsConnected() const;
 
-    // Send Version 2
-    // 1안 : JSON 오브젝트를 매개변수로 받기
+    // 1. 문자열로 Send
+    void Send(const std::string &destination, const string body);
+
+    // 2. json 객체로 Send
     void Send(const std::string &destination, const nlohmann::json &j);
 
-    // 2안 : 구조체(Struct)를 매개변수로 받기
     // // NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE 매크로가 정의된 struct만 사용 가능
+    // T 자리에 어떤 타입이든 올 수 있는 함수
+    // 호출할 때 넘기는 타입에 따라 자동으로 맞는 함수 생성
+    // 3. 구조체 Send
     template <typename T>
     void Send(const std::string &destination, const T &data)
     {
