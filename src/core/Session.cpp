@@ -82,7 +82,7 @@ void Session::Publish(Publisher *publisher)
 }
 
 // ── 1. Send (string) ────────────────────────────
-void Session::Send(const std::string &destination, const std::string body)
+void Session::Send(const std::string &destination, const std::string payload)
 {
     LOG("[SESSION] Send(string) -> " << destination);
     if (!IsConnected())
@@ -90,32 +90,14 @@ void Session::Send(const std::string &destination, const std::string body)
         LOG("[SESSION] Not connected — message dropped");
         return;
     }
-    std::string frame = BuildSendFrame(destination, body);
-    Pub(frame);
-}
-
-// ──2.  BuildSendFrame ───────────────────────────
-// 메시지를 보낼 때마다 사용
-std::string Session::BuildSendFrame(const std::string &dest, const std::string &body) const
-{
-    LOG("[SESSION] BuildSendFrame -> " << dest);
-    std::string frame =
-        "SEND\n"
-        "destination:" +
-        dest + "\n"
-               "content-type:application/json\n\n" +
-        body;
-    frame.push_back('\0');
-    return frame;
-}
-
-// ──3.  Pub ──────────────────────────────────────
-void Session::Pub(const std::string &rawFrame)
-{
-    LOG("[SESSION] Pub -> sending frame");
+    std::string frame = "SEND\n"
+                        "destination:" +
+                        destination + "\n"
+                                      "content-type:application/json\n\n" +
+                        payload;
     std::lock_guard<std::mutex> lock(clientMutex);
     websocketpp::lib::error_code ec;
-    currentClient->send(hdl, rawFrame, websocketpp::frame::opcode::text, ec);
+    currentClient->send(hdl, frame, websocketpp::frame::opcode::text, ec);
 }
 
 // ── 2. Send (json) ──────────────────────────────
