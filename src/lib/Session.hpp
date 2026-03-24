@@ -38,7 +38,8 @@ public:
     void Connect();
     void Disconnect();
     bool IsConnected() const;
-    void Publish(const std::string &name, Publisher *publisher);
+    // void Publish(const std::string &name, Publisher *publisher);
+    void Publish(const std::string &destination, const nlohmann::json &j);
     void Subscribe(const std::string &topic, Subscriber *subscriber);
 
     /////////////////////////////////////////////////////////////////////
