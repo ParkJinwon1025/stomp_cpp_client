@@ -158,6 +158,25 @@ void Session::Connect()
     impl_->client.connect(con);
 }
 
+// ── 1. Send (string) ─────────────────────────
+void Session::Send(const std::string &destination, const std::string payload)
+{
+    LOG("[SESSION] Send(string) -> " << destination);
+    if (!IsConnected())
+    {
+        LOG("[SESSION] Not connected — message dropped");
+        return;
+    }
+    std::string frame = "SEND\n"
+                        "destination:" +
+                        destination + "\n"
+                                      "content-type:application/json\n\n" +
+                        payload;
+    std::lock_guard<std::mutex> lock(impl_->clientMutex);
+    websocketpp::lib::error_code ec;
+    impl_->client.send(impl_->hdl, frame, websocketpp::frame::opcode::text, ec);
+}
+
 // ── Disconnect ───────────────────────────────
 // utility_client 방식 — 연결 닫기만 담당, 스레드 정리는 소멸자에서
 void Session::Disconnect()
@@ -213,25 +232,6 @@ void Session::Subscribe(const std::string &topic, Subscriber *subscriber)
     std::string id = "sub-" + std::to_string(impl_->subCounter++);
     websocketpp::lib::error_code ec;
     impl_->client.send(impl_->hdl, BuildSubscribeFrame(topic, id), websocketpp::frame::opcode::text, ec);
-}
-
-// ── 1. Send (string) ─────────────────────────
-void Session::Send(const std::string &destination, const std::string payload)
-{
-    LOG("[SESSION] Send(string) -> " << destination);
-    if (!IsConnected())
-    {
-        LOG("[SESSION] Not connected — message dropped");
-        return;
-    }
-    std::string frame = "SEND\n"
-                        "destination:" +
-                        destination + "\n"
-                                      "content-type:application/json\n\n" +
-                        payload;
-    std::lock_guard<std::mutex> lock(impl_->clientMutex);
-    websocketpp::lib::error_code ec;
-    impl_->client.send(impl_->hdl, frame, websocketpp::frame::opcode::text, ec);
 }
 
 // =============================================
