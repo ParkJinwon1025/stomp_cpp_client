@@ -158,8 +158,8 @@ void Session::Connect()
     impl_->client.connect(con);
 }
 
-// ── 1. Send (string) ─────────────────────────
-void Session::Send(const std::string &destination, const std::string payload)
+// ── 1. Send (string) ─────────────────────────  // J
+void Session::Publish(const std::string &destination, const nlohmann::json &j)
 {
     LOG("[SESSION] Send(string) -> " << destination);
     if (!IsConnected())
@@ -167,6 +167,10 @@ void Session::Send(const std::string &destination, const std::string payload)
         LOG("[SESSION] Not connected — message dropped");
         return;
     }
+
+    // 스트링 바꾸는 코드
+    std::string payload = j.dump();
+
     std::string frame = "SEND\n"
                         "destination:" +
                         destination + "\n"

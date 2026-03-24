@@ -45,23 +45,23 @@ public:
     //  Send                                                           //
     /////////////////////////////////////////////////////////////////////
     // 1. 문자열로 Send
-    void Send(const std::string &destination, const std::string payload);
+    // void Send(const std::string &destination, const std::string payload);
 
     // 라이브러리가 바뀌어도 Send 영향을 받지 않음.
     // 2. json 객체로 Send
-    void Send(const std::string &destination, const nlohmann::json &j)
-    {
-        LOG("[SESSION] Send(json)   -> " << destination);
-        Send(destination, j.dump());
-    }
+    void Publish(const std::string &destination, const nlohmann::json &j);
+    // {
+    //     LOG("[SESSION] Send(json)   -> " << destination);
+    //     Send(destination, j.dump());
+    // }
 
     // 3. 구조체로 Send
-    template <typename T>
-    void Send(const std::string &destination, const T &data)
-    {
-        nlohmann::json j = data;
-        Send(destination, j);
-    }
+    // template <typename T>
+    // void Send(const std::string &destination, const T &data)
+    // {
+    //     nlohmann::json j = data;
+    //     Send(destination, j);
+    // }
 
 private:
     std::string url;
