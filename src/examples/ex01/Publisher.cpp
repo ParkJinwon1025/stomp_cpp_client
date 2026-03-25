@@ -23,6 +23,6 @@ std::thread Publisher::Run(Session &session)
             if (message == "q")
                 break;
 
-            session.Send("/app/ubisam", "{\"payload\":\"" + message + "\"}");
+            session.Publish("/app/ubisam", "{\"payload\":\"" + message + "\"}");
         } });
 }

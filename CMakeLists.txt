@@ -15,27 +15,37 @@ set(VCPKG_ROOT "C:/vcpkg" CACHE PATH "Path to vcpkg installation")
 set(OPENSSL_ROOT_DIR "${VCPKG_ROOT}/installed/x64-windows")
 find_package(OpenSSL REQUIRED)
 
-include_directories(${CMAKE_SOURCE_DIR}/websocketpp)
-include_directories(${CMAKE_SOURCE_DIR}/websocketpp/config)
-include_directories(${CMAKE_SOURCE_DIR}/src/lib)
-include_directories(${CMAKE_SOURCE_DIR}/src/examples/example3)
-
-add_executable(robot_stomp_client
-    src/main.cpp
+set(LIB_SOURCES
     src/lib/Session.cpp
     src/lib/Subscriber.cpp
     src/lib/Reconnector.cpp
-    src/examples/example3/Publisher.cpp
 )
 
-target_link_libraries(robot_stomp_client
-    PRIVATE
+set(COMMON_INCLUDES
+    ${CMAKE_SOURCE_DIR}/websocketpp
+    ${CMAKE_SOURCE_DIR}/websocketpp/config
+    ${CMAKE_SOURCE_DIR}/src/lib
+)
+
+set(COMMON_LIBS
     asio::asio
     OpenSSL::SSL
     OpenSSL::Crypto
     nlohmann_json::nlohmann_json
 )
 
-if(WIN32)
-    target_link_libraries(robot_stomp_client PRIVATE ws2_32)
-endif()
+foreach(EX ex01 ex02 ex03 ex04)
+    add_executable(${EX}
+        src/examples/${EX}/main.cpp
+        src/examples/${EX}/Publisher.cpp
+        ${LIB_SOURCES}
+    )
+    target_include_directories(${EX} PRIVATE
+        ${COMMON_INCLUDES}
+        ${CMAKE_SOURCE_DIR}/src/examples/${EX}
+    )
+    target_link_libraries(${EX} PRIVATE ${COMMON_LIBS})
+    if(WIN32)
+        target_link_libraries(${EX} PRIVATE ws2_32)
+    endif()
+endforeach()

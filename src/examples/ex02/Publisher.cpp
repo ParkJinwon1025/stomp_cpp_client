@@ -1,18 +1,8 @@
 #include "Publisher.hpp"
 #include "Session.hpp"
-#include <nlohmann/json.hpp>
 #include <thread>
 #include <chrono>
-
-// 사용자 구현 구조체 예시
-struct TimestampData
-{
-    std::string type;
-    long long timestamp;
-};
-// struct → json 자동 변환 등록 (이 매크로 없으면 nlohmann::json j = data 에서 컴파일 에러)
-// JSON 변환 struct 및 필드 명시
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(TimestampData, type, timestamp)
+#include <string>
 
 // 스레드 실행 (detach)
 void Publisher::HandleStarted(Session &session)
@@ -31,9 +21,7 @@ std::thread Publisher::Run(Session &session)
             auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
 
-            // type: "report", timestamp : ms로 초기화
-            TimestampData data{ "report", ms };
-            session.Send("/app/ubisam", data);
+            session.Publish("/app/ubisam", "{\"timestamp\":" + std::to_string(ms) + "}");
 
             std::this_thread::sleep_for(std::chrono::seconds(1));
         } });

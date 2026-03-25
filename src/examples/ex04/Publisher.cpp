@@ -4,6 +4,16 @@
 #include <thread>
 #include <chrono>
 
+// 사용자 구현 구조체 예시
+struct TimestampData
+{
+    std::string type;
+    long long timestamp;
+};
+// struct → json 자동 변환 등록 (이 매크로 없으면 nlohmann::json j = data 에서 컴파일 에러)
+// JSON 변환 struct 및 필드 명시
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(TimestampData, type, timestamp)
+
 // 스레드 실행 (detach)
 void Publisher::HandleStarted(Session &session)
 {
@@ -18,20 +28,13 @@ std::thread Publisher::Run(Session &session)
                        {
         while (true)
         {
-            // duration_cast : 시간을 밀리초 단위로 변환
-            // std::chrono::system_clock::now().time_since_epoch() : 1970년 1월 1일부터 지금까지의 시간
-            // count 숫자로 꺼내기
             auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
 
-            // 빈 json 객체 생성
-            nlohmann::json j;
-
-            j["type"] = "report"; // type 키에 "report" 추가
-            j["timestamp"] = ms; // timestamp 키에 ms 값 추가
-
-            LOG("[PUBLISHER3] json object -> " << j.dump());
-            session.Send("/app/ubisam", j);
+            // type: "report", timestamp : ms로 초기화
+            TimestampData data{ "report", ms };
+            nlohmann::json j = data;
+            session.Publish("/app/ubisam", j);
 
             std::this_thread::sleep_for(std::chrono::seconds(1));
         } });

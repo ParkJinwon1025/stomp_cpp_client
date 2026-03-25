@@ -2,6 +2,8 @@
 
 #include <nlohmann/json.hpp>
 #include <string>
+#include <map>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <iostream>
@@ -35,12 +37,36 @@ public:
     Session(const Session &) = delete;
     Session &operator=(const Session &) = delete;
 
-    void Connect();
+    void Connect()
+    {
+        ConnectImpl([this]()
+                    {
+            for (auto &[topic, subscriber] : subscribers_)
+                SubscribeImpl(topic, subscriber); });
+    }
     void Disconnect();
     bool IsConnected() const;
-    // void Publish(const std::string &name, Publisher *publisher);
-    void Publish(const std::string &destination, const nlohmann::json &j);
-    void Subscribe(const std::string &topic, Subscriber *subscriber);
+
+    // Publisher 등록
+    void Publish(const std::string &name, Publisher *publisher);
+
+    // 단일 JSON Publish
+    // 전송 방식에 대한 단일 책임
+    // 구조체는 사용자가 알아서 JSON으로 변환하고 보내도록 함.
+    void Publish(const std::string &destination, const nlohmann::json &j)
+    {
+        PublishImpl(destination, j.dump());
+    }
+
+    // Subscriber 등록
+    void Subscribe(const std::string &topic, Subscriber *subscriber)
+    {
+        subscribers_[topic] = subscriber; // Map 에 저장
+        SubscribeImpl(topic, subscriber);
+    }
+
+    // 1. 입력하면 보내기
+    // 2.timestamp 계쏙 보내기
 
     /////////////////////////////////////////////////////////////////////
     //  Send                                                           //
@@ -50,7 +76,6 @@ public:
 
     // 라이브러리가 바뀌어도 Send 영향을 받지 않음.
     // 2. json 객체로 Send
-    void Publish(const std::string &destination, const nlohmann::json &j);
     // {
     //     LOG("[SESSION] Send(json)   -> " << destination);
     //     Send(destination, j.dump());
@@ -68,8 +93,16 @@ private:
     std::string url;
     std::string host;
 
+    std::map<std::string, Publisher *> publishers_;
+    std::map<std::string, Subscriber *> subscribers_;
+
     // Pimpl — websocketpp 등 구현 세부사항을 cpp로 숨김
     // url, host를 제외한 나머지 멤버는 Impl 안에
     struct Impl;
     std::unique_ptr<Impl> impl_;
+
+    // 외부에서 직접 호출할 필요가 없기에 private
+    void PublishImpl(const std::string &destination, const std::string &payload);
+    void SubscribeImpl(const std::string &topic, Subscriber *subscriber);
+    void ConnectImpl(std::function<void()> callback);
 };

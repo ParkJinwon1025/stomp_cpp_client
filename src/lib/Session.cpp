@@ -11,6 +11,7 @@
 #include "Publisher.hpp"
 #include "Subscriber.hpp"
 #include <map>
+#include <functional>
 #include <atomic>
 #include <thread>
 #include <iostream>
@@ -31,9 +32,6 @@ struct Session::Impl
 
     std::atomic<bool> stompReady{false};
     std::atomic<int> subCounter{0};
-
-    std::map<std::string, Publisher *> publishers;
-    std::map<std::string, Subscriber *> subscribers;
 };
 
 // =============================================
@@ -78,9 +76,9 @@ Session::~Session()
         impl_->wsThread.join();
 }
 
-// ── Connect ──────────────────────────────────
+// ── ConnectImpl ──────────────────────────────
 // utility_client 방식 — 연결 객체를 가져와 핸들러 등록 후 connect
-void Session::Connect()
+void Session::ConnectImpl(std::function<void()> callback)
 {
     LOG("[SESSION] connect -> " << url);
 
@@ -103,10 +101,15 @@ void Session::Connect()
         }
         LOG("[SESSION] Connected -> Sending CONNECT frame");
         websocketpp::lib::error_code ec;
-        impl_->client.send(h, BuildConnectFrame(host), websocketpp::frame::opcode::text, ec); });
+        std::string frame = "CONNECT\n"
+                            "accept-version:1.1,1.2\n"
+                            "host:" + host + "\n"
+                            "heart-beat:0,0\n\n";
+        frame.push_back('\0');
+        impl_->client.send(h, frame, websocketpp::frame::opcode::text, ec); });
 
     // 메시지 수신 시 — STOMP 프레임 종류에 따라 처리
-    con->set_message_handler([this](websocketpp::connection_hdl, ws_client::message_ptr msg)
+    con->set_message_handler([this, callback](websocketpp::connection_hdl, ws_client::message_ptr msg)
                              {
         const std::string &payload = msg->get_payload();
         LOG("[CORE] raw received -> '" << payload << "'");
@@ -114,6 +117,7 @@ void Session::Connect()
         {
             LOG("[SESSION] STOMP CONNECTED received");
             impl_->stompReady = true;
+            callback();
         }
         else if (payload.rfind("MESSAGE", 0) == 0)
         {
@@ -135,9 +139,9 @@ void Session::Connect()
 
             // destination에 해당하는 subscriber 호출
             std::lock_guard<std::mutex> lock(impl_->clientMutex);
-            auto it = impl_->subscribers.find(destination);
-            if (it != impl_->subscribers.end())
-                it->second->dispatch(body, *this);
+            auto it = subscribers_.find(destination);
+            if (it != subscribers_.end())
+                it->second->HandleReceived(*this, nlohmann::json::parse(body));
         } });
 
     // 연결 종료 시
@@ -158,8 +162,21 @@ void Session::Connect()
     impl_->client.connect(con);
 }
 
+// ── Publish ──────────────────────────────────
+void Session::Publish(const std::string &name, Publisher *publisher)
+{
+    if (publishers_.count(name))
+    {
+        LOG("[SESSION] Publisher already exists: " << name);
+        return;
+    }
+    publishers_[name] = publisher;
+    LOG("[SESSION] Publisher started: " << name);
+    publisher->HandleStarted(*this);
+}
+
 // ── 1. Send (string) ─────────────────────────  // J
-void Session::Publish(const std::string &destination, const nlohmann::json &j)
+void Session::PublishImpl(const std::string &destination, const std::string &payload)
 {
     LOG("[SESSION] Send(string) -> " << destination);
     if (!IsConnected())
@@ -167,9 +184,6 @@ void Session::Publish(const std::string &destination, const nlohmann::json &j)
         LOG("[SESSION] Not connected — message dropped");
         return;
     }
-
-    // 스트링 바꾸는 코드
-    std::string payload = j.dump();
 
     std::string frame = "SEND\n"
                         "destination:" +
@@ -196,19 +210,6 @@ bool Session::IsConnected() const
     return impl_->stompReady;
 }
 
-// ── Publish ──────────────────────────────────
-void Session::Publish(const std::string &name, Publisher *publisher)
-{
-    if (impl_->publishers.count(name))
-    {
-        LOG("[SESSION] Publisher already exists: " << name);
-        return;
-    }
-    impl_->publishers[name] = publisher;
-    LOG("[SESSION] Publisher started: " << name);
-    publisher->HandleStarted(*this);
-}
-
 // ── Subscribe ────────────────────────────────
 // websocketpp : 텍스트 전송 파이프(어떻게 전달하는지만 지원)
 // websocket 위에 stomp 프로토콜을 올리는 방식으로 구현
@@ -224,46 +225,20 @@ void Session::Publish(const std::string &name, Publisher *publisher)
 // send() 정도
 
 // STOMP 프로토콜을 이 위에 직접 구현
-void Session::Subscribe(const std::string &topic, Subscriber *subscriber)
+// ── SubscribeImpl ─────────────────────────────
+void Session::SubscribeImpl(const std::string &topic, Subscriber *subscriber)
 {
     LOG("[SESSION] subscribe -> " << topic);
 
-    // 등록할 Subscriber를 Map(어느 토픽에 어느 SubScriber를 연결할 지)에 저장
     std::lock_guard<std::mutex> lock(impl_->clientMutex);
     if (!impl_->stompReady)
         return;
-    impl_->subscribers[topic] = subscriber;
     std::string id = "sub-" + std::to_string(impl_->subCounter++);
+    std::string frame = "SUBSCRIBE\n"
+                        "id:" + id + "\n"
+                        "destination:" + topic + "\n\n";
+    frame.push_back('\0');
     websocketpp::lib::error_code ec;
-    impl_->client.send(impl_->hdl, BuildSubscribeFrame(topic, id), websocketpp::frame::opcode::text, ec);
+    impl_->client.send(impl_->hdl, frame, websocketpp::frame::opcode::text, ec);
 }
 
-// =============================================
-// Private
-// =============================================
-
-// ── BuildConnectFrame ────────────────────────
-static std::string BuildConnectFrame(const std::string &host)
-{
-    std::string frame =
-        "CONNECT\n"
-        "accept-version:1.1,1.2\n"
-        "host:" +
-        host + "\n"
-               "heart-beat:0,0\n\n";
-    frame.push_back('\0');
-    return frame;
-}
-
-// ── BuildSubscribeFrame ──────────────────────
-static std::string BuildSubscribeFrame(const std::string &topic, const std::string &id)
-{
-    std::string frame =
-        "SUBSCRIBE\n"
-        "id:" +
-        id + "\n"
-             "destination:" +
-        topic + "\n\n";
-    frame.push_back('\0');
-    return frame;
-}
