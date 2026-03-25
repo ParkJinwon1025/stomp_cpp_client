@@ -1,8 +1,8 @@
 #include "Publisher.hpp"
 #include "Session.hpp"
+#include <nlohmann/json.hpp>
 #include <thread>
 #include <chrono>
-#include <string>
 
 // 스레드 실행 (detach)
 void Publisher::HandleStarted(Session &session)
@@ -21,7 +21,8 @@ std::thread Publisher::Run(Session &session)
             auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
 
-            session.Publish("/app/ubisam", "{\"timestamp\":" + std::to_string(ms) + "}");
+            nlohmann::json j = {{"timestamp", ms}};
+            session.Publish("/app/ubisam", j);
 
             std::this_thread::sleep_for(std::chrono::seconds(1));
         } });

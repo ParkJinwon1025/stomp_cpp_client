@@ -10,15 +10,20 @@ int main()
 
     Session session("ws://localhost:9030/stomp/websocket");
 
+    Subscriber sub;
+    session.Subscribe("/topic/ubisam", &sub);
+
+    Reconnector reconnector(session);
+    reconnector.Start();
+
     session.Connect();
 
     Publisher pub;
     session.Publish("pub", &pub);
 
-    // Publisher1: Publish 내부에서 블로킹 (stdin 입력 대기) → 아래 불필요
-    // Publisher2: Publish 즉시 리턴 → 엔터 누를 때까지 대기
     std::cin.get();
 
+    reconnector.Stop();
     session.Disconnect();
 
     return 0;
