@@ -16,14 +16,14 @@ set(OPENSSL_ROOT_DIR "${VCPKG_ROOT}/installed/x64-windows")
 find_package(OpenSSL REQUIRED)
 
 set(LIB_SOURCES
-    src/lib/Session.cpp
-    src/lib/Reconnector.cpp
+    lib/Session.cpp
+    lib/Reconnector.cpp
 )
 
 set(COMMON_INCLUDES
     ${CMAKE_SOURCE_DIR}/websocketpp
     ${CMAKE_SOURCE_DIR}/websocketpp/config
-    ${CMAKE_SOURCE_DIR}/src/lib
+    ${CMAKE_SOURCE_DIR}/lib
 )
 
 set(COMMON_LIBS
@@ -35,17 +35,17 @@ set(COMMON_LIBS
 
 foreach(EX ex01 ex02 ex03 ex04)
     set(EX_SOURCES
-        src/examples/${EX}/main.cpp
-        src/examples/${EX}/Publisher.cpp
+        examples/${EX}/main.cpp
+        examples/${EX}/Publisher.cpp
         ${LIB_SOURCES}
     )
-    if(EXISTS ${CMAKE_SOURCE_DIR}/src/examples/${EX}/Subscriber.cpp)
-        list(APPEND EX_SOURCES src/examples/${EX}/Subscriber.cpp)
+    if(EXISTS ${CMAKE_SOURCE_DIR}/examples/${EX}/Subscriber.cpp)
+        list(APPEND EX_SOURCES examples/${EX}/Subscriber.cpp)
     endif()
     add_executable(${EX} ${EX_SOURCES})
     target_include_directories(${EX} PRIVATE
         ${COMMON_INCLUDES}
-        ${CMAKE_SOURCE_DIR}/src/examples/${EX}
+        ${CMAKE_SOURCE_DIR}/examples/${EX}
     )
     target_link_libraries(${EX} PRIVATE ${COMMON_LIBS})
     if(WIN32)
