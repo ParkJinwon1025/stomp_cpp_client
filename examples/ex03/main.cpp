@@ -4,7 +4,7 @@
 #include "Subscriber.hpp"
 #include <windows.h>
 
-// ex03 : 요청(ex] { "action" : "move/" })을 주면 action 값에 따라 응답을 줌
+// ex03 : 요청(ex] { "action" : "move/stop" })을 주면 action 값에 따라 응답을 줌
 int main()
 {
     SetConsoleOutputCP(CP_UTF8);
