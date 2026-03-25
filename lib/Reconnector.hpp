@@ -20,5 +20,5 @@ private:
     std::atomic<bool> running{false}; // 스레드 실행 플래그
     std::thread thread;               // 감시 스레드
 
-    void Loop(); // 스레드 본체: isConnected 폴링 → 끊기면 Connect 호출
+    void Run(); // 스레드 본체: isConnected 폴링 → 끊기면 Connect 호출
 };

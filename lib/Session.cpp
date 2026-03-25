@@ -8,8 +8,6 @@
 #include <websocketpp/client.hpp>
 
 #include "Session.hpp"
-#include "Publisher.hpp"
-#include "Subscriber.hpp"
 #include <map>
 #include <functional>
 #include <atomic>

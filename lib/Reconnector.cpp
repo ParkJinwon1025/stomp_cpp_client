@@ -11,7 +11,8 @@ Reconnector::~Reconnector() { Stop(); } // 소멸 시 자동 종료
 void Reconnector::Start()
 {
     running = true;
-    thread = std::thread([this]() { Loop(); }); // 감시 스레드 시작
+    thread = std::thread([this]()
+                         { Run(); }); // 감시 스레드 시작
 }
 
 void Reconnector::Stop()
@@ -21,7 +22,7 @@ void Reconnector::Stop()
         thread.join(); // 스레드 종료 대기
 }
 
-void Reconnector::Loop()
+void Reconnector::Run()
 {
     while (running)
     {

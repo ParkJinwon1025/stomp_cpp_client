@@ -7,7 +7,7 @@ class Subscriber
 {
 public:
     Subscriber() = default;
-    virtual ~Subscriber() = default;
+    ~Subscriber() = default;
 
     void HandleReceived(Session &session, const nlohmann::json &json); // 메시지 수신 시 호출 → Run 실행
 
