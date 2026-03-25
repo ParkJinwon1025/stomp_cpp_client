@@ -167,18 +167,6 @@ void Session::ConnectImpl(std::function<void()> callback)
     impl_->client.connect(con);
 }
 
-// ── Publish ──────────────────────────────────
-void Session::Publish(const std::string &name, Publisher *publisher)
-{
-    if (publishers_.count(name))
-    {
-        LOG("[SESSION] Publisher already exists: " << name);
-        return;
-    }
-    publishers_[name] = publisher;
-    LOG("[SESSION] Publisher started: " << name);
-    publisher->HandleStarted(*this);
-}
 
 // ── 문자열로 보내기 ─────────────────────────
 void Session::PublishImpl(const std::string &destination, const std::string &payload)

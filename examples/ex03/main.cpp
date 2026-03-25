@@ -4,22 +4,20 @@
 #include "Subscriber.hpp"
 #include <windows.h>
 
+// ex03 : 요청(ex] { "action" : "move/" })을 주면 action 값에 따라 응답을 줌
 int main()
 {
     SetConsoleOutputCP(CP_UTF8);
 
     Session session("ws://localhost:9030/stomp/websocket");
 
+    Subscriber sub;
+    session.Subscribe("/topic/robot", &sub);
+
     session.Connect();
 
-    Publisher pub;
-    session.Publish("pub", &pub);
-
-    // Publisher1: Publish 내부에서 블로킹 (stdin 입력 대기) → 아래 불필요
-    // Publisher2: Publish 즉시 리턴 → 엔터 누를 때까지 대기
     std::cin.get();
 
     session.Disconnect();
-
     return 0;
 }

@@ -3,6 +3,7 @@
 #include "Subscriber.hpp"
 #include <windows.h>
 
+// ex02 : 1초마다 Timestamp를 보냄
 int main()
 {
     SetConsoleOutputCP(CP_UTF8);

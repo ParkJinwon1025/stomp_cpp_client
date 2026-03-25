@@ -36,9 +36,11 @@ set(COMMON_LIBS
 foreach(EX ex01 ex02 ex03 ex04)
     set(EX_SOURCES
         examples/${EX}/main.cpp
-        examples/${EX}/Publisher.cpp
         ${LIB_SOURCES}
     )
+    if(EXISTS ${CMAKE_SOURCE_DIR}/examples/${EX}/Publisher.cpp)
+        list(APPEND EX_SOURCES examples/${EX}/Publisher.cpp)
+    endif()
     if(EXISTS ${CMAKE_SOURCE_DIR}/examples/${EX}/Subscriber.cpp)
         list(APPEND EX_SOURCES examples/${EX}/Subscriber.cpp)
     endif()

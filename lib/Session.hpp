@@ -25,8 +25,8 @@ inline std::mutex coutMutex;
         std::cout << msg << std::endl;                    \
     }
 
-class Publisher;
-class Subscriber;
+#include "Publisher.hpp"
+#include "Subscriber.hpp"
 
 class Session
 {
@@ -48,7 +48,17 @@ public:
     bool IsConnected() const;
 
     // Publisher 등록
-    void Publish(const std::string &name, Publisher *publisher);
+    void Publish(const std::string &name, Publisher *publisher)
+    {
+        if (publishers_.count(name))
+        {
+            LOG("[SESSION] Publisher already exists: " << name);
+            return;
+        }
+        publishers_[name] = publisher;
+        LOG("[SESSION] Publisher started: " << name);
+        publisher->HandleStarted(*this);
+    }
 
     // 단일 JSON Publish
     // 전송 방식에 대한 단일 책임
