@@ -17,7 +17,6 @@ find_package(OpenSSL REQUIRED)
 
 set(LIB_SOURCES
     src/lib/Session.cpp
-    src/lib/Subscriber.cpp
     src/lib/Reconnector.cpp
 )
 
@@ -35,11 +34,15 @@ set(COMMON_LIBS
 )
 
 foreach(EX ex01 ex02 ex03 ex04)
-    add_executable(${EX}
+    set(EX_SOURCES
         src/examples/${EX}/main.cpp
         src/examples/${EX}/Publisher.cpp
         ${LIB_SOURCES}
     )
+    if(EXISTS ${CMAKE_SOURCE_DIR}/src/examples/${EX}/Subscriber.cpp)
+        list(APPEND EX_SOURCES src/examples/${EX}/Subscriber.cpp)
+    endif()
+    add_executable(${EX} ${EX_SOURCES})
     target_include_directories(${EX} PRIVATE
         ${COMMON_INCLUDES}
         ${CMAKE_SOURCE_DIR}/src/examples/${EX}

@@ -138,10 +138,15 @@ void Session::ConnectImpl(std::function<void()> callback)
                 body = payload.substr(body_pos + 2);
 
             // destination에 해당하는 subscriber 호출
-            std::lock_guard<std::mutex> lock(impl_->clientMutex);
-            auto it = subscribers_.find(destination);
-            if (it != subscribers_.end())
-                it->second->HandleReceived(*this, nlohmann::json::parse(body));
+            Subscriber *sub = nullptr;
+            {
+                std::lock_guard<std::mutex> lock(impl_->clientMutex);
+                auto it = subscribers_.find(destination);
+                if (it != subscribers_.end())
+                    sub = it->second;
+            }
+            if (sub)
+                sub->HandleReceived(*this, nlohmann::json::parse(body));
         } });
 
     // 연결 종료 시

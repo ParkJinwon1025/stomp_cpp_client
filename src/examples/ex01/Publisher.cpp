@@ -1,5 +1,6 @@
 #include "Publisher.hpp"
 #include "Session.hpp"
+#include <nlohmann/json.hpp>
 #include <string>
 #include <iostream>
 
@@ -23,6 +24,7 @@ std::thread Publisher::Run(Session &session)
             if (message == "q")
                 break;
 
-            session.Publish("/app/ubisam", "{\"payload\":\"" + message + "\"}");
+            nlohmann::json j = {{"message", message}};
+            session.Publish("/app/ubisam", j);
         } });
 }
