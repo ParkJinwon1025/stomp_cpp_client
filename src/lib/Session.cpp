@@ -175,7 +175,7 @@ void Session::Publish(const std::string &name, Publisher *publisher)
     publisher->HandleStarted(*this);
 }
 
-// ── 1. Send (string) ─────────────────────────  // J
+// ── 문자열로 보내기 ─────────────────────────
 void Session::PublishImpl(const std::string &destination, const std::string &payload)
 {
     LOG("[SESSION] Send(string) -> " << destination);
@@ -190,24 +190,10 @@ void Session::PublishImpl(const std::string &destination, const std::string &pay
                         destination + "\n"
                                       "content-type:application/json\n\n" +
                         payload;
+    frame.push_back('\0');
     std::lock_guard<std::mutex> lock(impl_->clientMutex);
     websocketpp::lib::error_code ec;
     impl_->client.send(impl_->hdl, frame, websocketpp::frame::opcode::text, ec);
-}
-
-// ── Disconnect ───────────────────────────────
-// utility_client 방식 — 연결 닫기만 담당, 스레드 정리는 소멸자에서
-void Session::Disconnect()
-{
-    LOG("[SESSION] disconnect");
-    websocketpp::lib::error_code ec;
-    impl_->client.close(impl_->hdl, websocketpp::close::status::going_away, "", ec);
-}
-
-// ── IsConnected ──────────────────────────────
-bool Session::IsConnected() const
-{
-    return impl_->stompReady;
 }
 
 // ── Subscribe ────────────────────────────────
@@ -235,10 +221,26 @@ void Session::SubscribeImpl(const std::string &topic, Subscriber *subscriber)
         return;
     std::string id = "sub-" + std::to_string(impl_->subCounter++);
     std::string frame = "SUBSCRIBE\n"
-                        "id:" + id + "\n"
-                        "destination:" + topic + "\n\n";
+                        "id:" +
+                        id + "\n"
+                             "destination:" +
+                        topic + "\n\n";
     frame.push_back('\0');
     websocketpp::lib::error_code ec;
     impl_->client.send(impl_->hdl, frame, websocketpp::frame::opcode::text, ec);
 }
 
+// ── Disconnect ───────────────────────────────
+// utility_client 방식 — 연결 닫기만 담당, 스레드 정리는 소멸자에서
+void Session::Disconnect()
+{
+    LOG("[SESSION] disconnect");
+    websocketpp::lib::error_code ec;
+    impl_->client.close(impl_->hdl, websocketpp::close::status::going_away, "", ec);
+}
+
+// ── IsConnected ──────────────────────────────
+bool Session::IsConnected() const
+{
+    return impl_->stompReady;
+}
