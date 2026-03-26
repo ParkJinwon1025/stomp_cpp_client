@@ -49,11 +49,25 @@ stomp_cpp_client/
 - VSCode
 - CMake 3.15 이상
 - vcpkg
-- websocketpp (프로젝트 내 포함)
+- websocketpp
 
 ## 환경 설정 (처음 설치하는 경우)
 
-### 1. vcpkg 설치
+### 1. websocketpp 설치
+
+1. [websocketpp GitHub](https://github.com/zaphoyd/websocketpp)에서 **Code → Download ZIP** 클릭
+2. 압축 해제 후 폴더 이름을 `websocketpp`로 변경
+3. 프로젝트 루트에 붙여넣기
+
+```
+stomp_cpp_client/
+├── websocketpp/   ← 여기에 넣기
+├── lib/
+├── examples/
+└── CMakeLists.txt
+```
+
+### 2. vcpkg 설치
 
 ```bash
 git clone https://github.com/microsoft/vcpkg.git C:/vcpkg
@@ -61,7 +75,7 @@ cd C:/vcpkg
 bootstrap-vcpkg.bat
 ```
 
-### 2. 패키지 설치
+### 3. 패키지 설치
 
 ```bash
 C:/vcpkg/vcpkg.exe install asio:x64-windows
