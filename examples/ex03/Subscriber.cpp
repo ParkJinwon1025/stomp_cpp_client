@@ -3,7 +3,6 @@
 
 void Subscriber::HandleReceived(Session &session, const nlohmann::json &json)
 {
-
     Run(session, json);
 }
 
