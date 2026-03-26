@@ -71,6 +71,8 @@ Session::Session(const std::string &u) : impl_(std::make_unique<Impl>()) // impl
     // client.run()을 별도 스레드에서 실행
     // 스레드가 네트워크 이벤트(연결, 수신, 종료)를 계속 처리
     // 메인 스레드는 블로킹 없이 다른 일을 할 수 있음.
+    // 서버 연결 / 메시지 수신 / 연결 끊김 / 연결 실패
+    // 4가지 이벤트를 감지하고 등록된 핸들러를 호출
     impl_->wsThread = std::thread(&ws_client::run, &impl_->client);
 }
 

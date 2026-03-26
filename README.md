@@ -2,6 +2,8 @@
 
 C++ STOMP over WebSocket 클라이언트 라이브러리
 
+> C++ 개발 환경이 처음이라면 [VSCode C++ 환경 설정 가이드](https://code.visualstudio.com/docs/cpp/config-mingw)를 먼저 참고하세요.
+
 ## 프로젝트 구조
 
 ```
