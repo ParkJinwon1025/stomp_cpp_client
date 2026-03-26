@@ -4,6 +4,7 @@
 #include "Subscriber.hpp"
 #include <windows.h>
 
+// ex04 : 임시 Reconnector 및 재연결 시 Subscribe 테스트
 int main()
 {
     // 콘솔 출력 인코딩을 UTF-8로 바꿈.
