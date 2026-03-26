@@ -1,79 +1,94 @@
-# 수정 사항 정리
-
-## 1. Session.hpp / Session.cpp
-
-### 변경
-- 기존 `Publish(dest, body)` → `Send(dest, body)` 로 이름 변경
-- Session.cpp 내부에서 `Publish` 호출하는 곳도 `Send`로 변경
-
-### 추가
-- `void Send(const std::string& dest, const std::string& body)`
-  - 문자열을 STOMP 프레임으로 마샬링 후 전송
-- `template<typename T> void Send(const std::string& dest, const T& data)`
-  - 구조체 → JSON → STOMP 프레임으로 마샬링 후 전송 (JSON 라이브러리 필요)
-- `void Publish(Publisher* publisher)`
-  - 내부에서 publisher->run() 호출
-
-### Session.cpp RouteMessage 수정
-- `s.subscriber->Received(body, *this)` → `s.subscriber->receive(body, *this)` 로 변경
+# websocketpp 지원 여부 및 구현 방식
 
 ---
 
-## 2. Publisher.hpp / Publisher.cpp
+## 1. Connect
 
-### 변경 (전면 재작성)
-- 기존: 워커 스레드, AddPeriodic, Enqueue 등 복잡한 구조
-- 변경 후: 인터페이스만 제공, 구현은 사용자가 담당
+**websocketpp 지원 여부: O**
 
-**Publisher.hpp**
-```cpp
-class Publisher {
-public:
-    Publisher(Session& session);
-    virtual void run() = 0;
-    virtual ~Publisher() = default;
-protected:
-    Session& session;
-};
+- 참조: `tutorials/utility_client/step4.cpp`
+
+| 단계 | 호출 | 위치 |
+|------|------|------|
+| 연결 객체 생성 | `client.get_connection(uri, ec)` | step4.cpp:106 |
+| 핸들러 등록 | `set_open_handler`, `set_fail_handler` | step4.cpp:117~128 |
+| 연결 실행 | `client.connect(con)` | step4.cpp:130 |
+
+**우리 코드 구현 (Session.cpp)**
+- `get_connection()`, `connect()` 를 그대로 사용
+- `set_open_handler` 안에서 추가로 STOMP CONNECT 프레임을 직접 조립해 `send()` 로 전송
+- `set_message_handler` 안에서 STOMP CONNECTED 응답을 확인 후 `stompReady = true` 설정
+
+---
+
+## 2. Disconnect
+
+**websocketpp 지원 여부: O**
+
+- 참조: `tutorials/utility_client/step5.cpp`
+
+| 단계 | 호출 | 위치 |
+|------|------|------|
+| 연결 닫기 | `client.close(hdl, going_away, "", ec)` | step5.cpp:137, 194 |
+| 이벤트 루프 종료 | `client.stop_perpetual()` | step5.cpp:126 |
+| 스레드 정리 | `thread.join()` | step5.cpp:144 |
+
+**우리 코드 구현 (Session.cpp)**
+- `Disconnect()` → `client.close()` 그대로 사용 (Session.cpp:277)
+- 소멸자에서 `stop_perpetual()` + `wsThread.join()` 으로 정리 (Session.cpp:82~94)
+
+---
+
+## 3. IsConnected
+
+**websocketpp 지원 여부: X**
+
+websocketpp는 연결 상태를 조회하는 메서드를 제공하지 않음.
+`set_open_handler`, `set_close_handler`, `set_fail_handler` 콜백만 제공.
+
+**우리 코드 구현 (Session.cpp)**
+- `std::atomic<bool> stompReady` 플래그를 직접 관리
+- STOMP CONNECTED 프레임 수신 시 `true` (Session.cpp:148)
+- close / fail 핸들러에서 `false` (Session.cpp:189, 195)
+- `IsConnected()` 가 이 플래그를 반환 (Session.cpp:284)
+
+---
+
+## 4. Publish (Send)
+
+**websocketpp 지원 여부: X (전송 수단만 제공)**
+
+websocketpp는 `client.send(hdl, payload, opcode, ec)` 로 raw bytes 전송만 지원.
+STOMP 프레임 개념 없음.
+
+**우리 코드 구현 (Session.cpp)**
+- STOMP SEND 프레임을 문자열로 직접 조립 후 `client.send()` 호출 (Session.cpp:214~226)
+
+```
+SEND
+destination:/queue/orders
+content-type:application/json
+
+{payload}\0
 ```
 
-**Publisher.cpp**
-- 생성자만 구현
-
 ---
 
-## 3. Subscriber.hpp
+## 5. Subscribe
 
-### 변경 (전면 재작성)
-- 기존: 콜백 함수를 생성자에서 받아 저장하는 구조
-- 변경 후: 순수 가상함수 인터페이스, 구현은 사용자가 담당
+**websocketpp 지원 여부: X**
 
-```cpp
-class Subscriber {
-public:
-    virtual void receive(const std::string& body, Session& session) = 0;
-    virtual ~Subscriber() = default;
-};
+websocketpp는 Subscribe 개념이 없음.
+단일 `set_message_handler` 콜백으로 모든 수신 메시지를 받을 뿐.
+
+**우리 코드 구현 (Session.cpp)**
+- STOMP SUBSCRIBE 프레임을 직접 조립해 `client.send()` 로 전송 (Session.cpp:257~268)
+- 수신 메시지에서 `destination` 헤더를 파싱해 `subscribers_` 맵으로 직접 라우팅 (Session.cpp:156~182)
+
 ```
+SUBSCRIBE
+id:sub-0
+destination:/topic/chat
 
----
-
-## 4. main.cpp
-
-### 변경
-- 기존 복잡한 예제 제거
-- 단순 예제로 교체:
-  - PrintSubscriber 구현체 정의 (메시지 수신 시 "1" 출력)
-  - session.Subscribe("/topic/test", &sub) 등록
-  - session.Send("/topic/test", "hello") 단일 전송
-
----
-
-## 작업 순서 (권장)
-
-1. Publisher.hpp → 인터페이스로 재작성
-2. Publisher.cpp → 생성자만 남기고 정리
-3. Subscriber.hpp → 인터페이스로 재작성
-4. Session.hpp → Send 추가, Publish(Publisher*) 추가
-5. Session.cpp → Publish → Send 이름 변경, RouteMessage 수정, Publish(Publisher*) 구현
-6. main.cpp → 단순 예제로 교체
+\0
+```

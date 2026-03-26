@@ -18,6 +18,9 @@
 // C++ : 임베디드/로봇 분야에서는 STOMP 보다 다른 프로토콜을 많이 씀.
 
 // 멀티스레드 환경에서 안전하게 콘솔 출력하기 위한 뮤텍스
+// coutMutex : 뮤텍스를 잡아야만 std::cout로 출력 가능
+// #define : 매크로
+// cout : C++의 콘솔 출력 객체
 inline std::mutex coutMutex;
 #define LOG(msg)                                          \
     {                                                     \
@@ -34,7 +37,10 @@ public:
     Session(const std::string &url);
     ~Session();
 
+    // 복사 생성자 : 객체를 만들 때 호출
     Session(const Session &) = delete;
+
+    // 복사 대입 연산자 = 이미 존재하는 객체에 덮어씌울 때 호출
     Session &operator=(const Session &) = delete;
 
     void Connect()
@@ -106,9 +112,12 @@ private:
     std::map<std::string, Publisher *> publishers_;
     std::map<std::string, Subscriber *> subscribers_;
 
-    // Pimpl — websocketpp 등 구현 세부사항을 cpp로 숨김
     // url, host를 제외한 나머지 멤버는 Impl 안에
-    struct Impl;
+    struct Impl; // Impl 구조체 선언
+
+    // Impl 객체를 힙에 할당해서 포인터로 보유
+    // unique_ptr : Session이 소멸될 때 자동으로 Impl도 같이 소멸
+    // Pimpl — websocketpp 등 구현 세부사항을 cpp로 숨김
     std::unique_ptr<Impl> impl_;
 
     // 외부에서 직접 호출할 필요가 없기에 private
