@@ -16,6 +16,8 @@ int main()
     Reconnector reconnector(session);
     reconnector.Start();
 
+    // 2개 이상의 Publihser와 Subscriber를 만들 때는 어떻게?
+
     session.Connect();
 
     Publisher pub;
