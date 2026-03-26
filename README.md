@@ -4,24 +4,40 @@ C++ STOMP over WebSocket 클라이언트 라이브러리
 
 ## 요구사항
 
-- Visual Studio 2019 이상 (C++ 개발 워크로드 포함)
+- VSCode
+- MSYS2 + MinGW-w64 (g++ 컴파일러)
 - CMake 3.15 이상
 - vcpkg
 - websocketpp (프로젝트 내 포함)
 
 ## 환경 설정 (처음 설치하는 경우)
 
-### 1. Visual Studio 설치
+### 1. VSCode 설치
 
-[Visual Studio 다운로드](https://visualstudio.microsoft.com/ko/)에서 설치 시 **C++를 사용한 데스크톱 개발** 워크로드를 선택하세요.
+[VSCode 다운로드](https://code.visualstudio.com/)에서 설치 후, 아래 확장을 설치하세요.
 
-### 2. CMake 설치
+- **C/C++** (Microsoft)
+- **CMake Tools** (Microsoft)
+
+### 2. MSYS2 설치 (g++ 컴파일러)
+
+[VSCode MinGW 가이드](https://code.visualstudio.com/docs/cpp/config-mingw)를 따라 MSYS2와 MinGW-w64를 설치하세요.
+
+설치 후 MSYS2 터미널에서:
+
+```bash
+pacman -S --needed base-devel mingw-w64-ucrt-x86_64-toolchain
+```
+
+> 설치 후 `C:\msys64\ucrt64\bin` 을 시스템 PATH에 추가하세요.
+
+### 3. CMake 설치
 
 [CMake 다운로드](https://cmake.org/download/)에서 Windows 설치파일을 받아서 설치하세요.
 
 > 설치 시 **"Add CMake to the system PATH"** 옵션을 선택하세요.
 
-### 3. vcpkg 설치
+### 4. vcpkg 설치
 
 ```bash
 git clone https://github.com/microsoft/vcpkg.git C:/vcpkg
@@ -29,26 +45,12 @@ cd C:/vcpkg
 bootstrap-vcpkg.bat
 ```
 
-### 4. 패키지 설치
+### 5. 패키지 설치
 
 ```bash
-C:/vcpkg/vcpkg.exe install asio:x64-windows
-C:/vcpkg/vcpkg.exe install nlohmann-json:x64-windows
-C:/vcpkg/vcpkg.exe install openssl:x64-windows
-```
-
-### 5. websocketpp 설치
-
-1. [websocketpp GitHub](https://github.com/zaphoyd/websocketpp)에서 **Code → Download ZIP** 클릭
-2. 압축 해제 후 폴더 이름을 `websocketpp`로 변경
-3. 프로젝트 루트에 붙여넣기
-
-```
-stomp_cpp_client/
-├── websocketpp/   ← 여기에 넣기
-├── src/
-├── CMakeLists.txt
-...
+C:/vcpkg/vcpkg.exe install asio:x64-mingw-dynamic
+C:/vcpkg/vcpkg.exe install nlohmann-json:x64-mingw-dynamic
+C:/vcpkg/vcpkg.exe install openssl:x64-mingw-dynamic
 ```
 
 ## 빌드
@@ -57,47 +59,65 @@ stomp_cpp_client/
 git clone <repo-url>
 cd stomp_cpp_client
 mkdir build && cd build
-cmake .. -DCMAKE_TOOLCHAIN_FILE=<vcpkg경로>/scripts/buildsystems/vcpkg.cmake -DVCPKG_ROOT=<vcpkg경로>
+cmake .. -G "MinGW Makefiles" -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-mingw-dynamic
 cmake --build .
 ```
 
-> **예시** (vcpkg가 `C:/vcpkg`에 설치된 경우 — 기본값이라 생략 가능):
-> ```bash
-> cmake .. -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
-> ```
-
-> **참고**: 빌드 후 `'pwsh.exe'은(는) 내부 또는 외부 명령...` 경고가 뜰 수 있어요. PowerShell 7이 없을 때 나오는 경고로 빌드/실행에는 영향 없어요. PowerShell 터미널에서 실행하거나 [PowerShell 7](https://aka.ms/pscore6)을 설치하면 사라져요.
-
 ## 실행
+
+빌드 후 `build/` 폴더 안에 예제별 실행 파일이 생성됩니다.
 
 ```bash
 # Windows
-Debug\robot_stomp_client.exe
+build\ex01.exe
+build\ex02.exe
+build\ex03.exe
+build\ex04.exe
 ```
 
-## Publisher 선택
+## 예제 목록
 
-`CMakeLists.txt`에서 사용할 Publisher 폴더를 지정:
+| 예제 | 설명 |
+|------|------|
+| ex01 | 터미널 입력 → JSON으로 변환 후 전송 (`q` 입력 시 종료) |
+| ex02 | 1초마다 timestamp를 JSON으로 전송 |
+| ex03 | 수신한 JSON의 `action` 값에 따라 응답 전송 (move/stop) |
+| ex04 | 1초마다 struct → JSON 자동 변환 후 전송 + 자동 재연결 |
 
-```cmake
-include_directories(${CMAKE_SOURCE_DIR}/src/Publisher3)  # 또는 Publisher2, Publisher4
+## 프로젝트 구조
 
-add_executable(robot_stomp_client
-    ...
-    src/Publisher3/Publisher.cpp  # 사용할 Publisher로 교체
-)
 ```
-
-| Publisher | 방식 |
-|---|---|
-| Publisher1 | 키보드 입력 → 문자열 직접 Send |
-| Publisher2 | 1초마다 timestamp → 문자열 Send |
-| Publisher3 | 1초마다 → nlohmann::json 객체 → Send |
-| Publisher4 | 1초마다 → struct → Send |
+stomp_cpp_client/
+├── lib/                  # 라이브러리 헤더 및 구현
+│   ├── Session.hpp
+│   ├── Session.cpp
+│   ├── Publisher.hpp
+│   ├── Subscriber.hpp
+│   ├── Reconnector.hpp
+│   └── Reconnector.cpp
+├── examples/
+│   ├── ex01/
+│   │   ├── main.cpp
+│   │   ├── Publisher.cpp
+│   │   └── Subscriber.cpp
+│   ├── ex02/
+│   │   ├── main.cpp
+│   │   ├── Publisher.cpp
+│   │   └── Subscriber.cpp
+│   ├── ex03/
+│   │   ├── main.cpp
+│   │   └── Subscriber.cpp
+│   └── ex04/
+│       ├── main.cpp
+│       ├── Publisher.cpp
+│       └── Subscriber.cpp
+├── websocketpp/          # 프로젝트 내 포함
+└── CMakeLists.txt
+```
 
 ## 서버 URL 변경
 
-`src/main.cpp`에서 수정:
+각 예제의 `main.cpp`에서 수정:
 
 ```cpp
 Session session("ws://localhost:9030/stomp/websocket");
